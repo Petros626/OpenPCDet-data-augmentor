@@ -118,9 +118,9 @@ def main():
 
     logger.info("----------- Create dataloader & network & optimizer -----------")
     train_set, train_loader, train_sampler = build_dataloader(
-        dataset_cfg=cfg.DATA_CONFIG,
-        class_names=cfg.CLASS_NAMES,
-        batch_size=args.batch_size,
+        dataset_cfg=cfg.DATA_CONFIG, # from yaml
+        class_names=cfg.CLASS_NAMES, # from yaml
+        batch_size=args.batch_size, # from parameter or yaml
         dist=dist_train, workers=args.workers,
         logger=logger,
         training=True,

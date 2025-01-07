@@ -192,7 +192,7 @@ def main():
     ckpt_dir = args.ckpt_dir if args.ckpt_dir is not None else output_dir / 'ckpt'
 
     test_set, test_loader, sampler = build_dataloader(
-        dataset_cfg=cfg.DATA_CONFIG,
+        dataset_cfg=cfg.DATA_CONFIG, # load via model yaml dataset yaml
         class_names=cfg.CLASS_NAMES,
         batch_size=args.batch_size,
         dist=dist_test, workers=args.workers, logger=logger, training=False
