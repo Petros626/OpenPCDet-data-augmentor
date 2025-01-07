@@ -52,8 +52,8 @@ class DistributedSampler(_DistributedSampler):
 
 
 def build_dataloader(dataset_cfg, class_names, batch_size, dist, root_path=None, workers=4, seed=None,
-                     logger=None, training=True, merge_all_iters_to_one_epoch=False, total_epochs=0):
-
+                     logger=None, training=False, merge_all_iters_to_one_epoch=False, total_epochs=0):
+    # read the dataset cfgs from .yaml
     dataset = __all__[dataset_cfg.DATASET](
         dataset_cfg=dataset_cfg,
         class_names=class_names,
@@ -67,16 +67,22 @@ def build_dataloader(dataset_cfg, class_names, batch_size, dist, root_path=None,
         dataset.merge_all_iters_to_one_epoch(merge=True, epochs=total_epochs)
 
     if dist:
-        if training:
+        #if training:
+        if training is False:
             sampler = torch.utils.data.distributed.DistributedSampler(dataset)
         else:
             rank, world_size = common_utils.get_dist_info()
             sampler = DistributedSampler(dataset, world_size, rank, shuffle=False)
     else:
         sampler = None
+    # dataloader = DataLoader(
+    #     dataset, batch_size=batch_size, pin_memory=True, num_workers=workers,
+    #     shuffle=(sampler is None) and training, collate_fn=dataset.collate_batch,
+    #     drop_last=False, sampler=sampler, timeout=0, worker_init_fn=partial(common_utils.worker_init_fn, seed=seed)
+    # )
     dataloader = DataLoader(
         dataset, batch_size=batch_size, pin_memory=True, num_workers=workers,
-        shuffle=(sampler is None) and training, collate_fn=dataset.collate_batch,
+        shuffle=(sampler is None), collate_fn=dataset.collate_batch,
         drop_last=False, sampler=sampler, timeout=0, worker_init_fn=partial(common_utils.worker_init_fn, seed=seed)
     )
 
