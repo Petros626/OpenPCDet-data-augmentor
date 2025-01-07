@@ -5,6 +5,7 @@ from ...utils import common_utils
 from ...utils import box_utils
 
 
+
 def random_flip_along_x(gt_boxes, points, return_flip=False, enable=None):
     """
     Args:
@@ -13,7 +14,9 @@ def random_flip_along_x(gt_boxes, points, return_flip=False, enable=None):
     Returns:
     """
     if enable is None:
-        enable = np.random.choice([False, True], replace=False, p=[0.5, 0.5])
+        #enable = np.random.choice([False, True], replace=False, p=[0.5, 0.5])
+        enable = True
+
     if enable:
         gt_boxes[:, 1] = -gt_boxes[:, 1]
         gt_boxes[:, 6] = -gt_boxes[:, 6]
@@ -67,8 +70,8 @@ def global_rotation(gt_boxes, points, rot_range, return_rot=False, noise_rotatio
         )[0][:, 0:2]
 
     if return_rot:
-        return gt_boxes, points, noise_rotation
-    return gt_boxes, points
+        return gt_boxes, points, noise_rotation, True
+    return gt_boxes, points, False
 
 
 def global_scaling(gt_boxes, points, scale_range, return_scale=False):
@@ -318,6 +321,70 @@ def local_scaling(gt_boxes, points, scale_range):
     return gt_boxes, points
 
 
+#######################################################################################################################################
+# TODO: check the correctness
+# maybe def bbox3d_iou_func() is already what I need or def boxes_iou3d_gpu()
+def box_collision_test(boxes, qboxes):
+    """Box collision test for 3D bounding boxes in the format [x, y, z, dx, dy, dz, heading].
+
+    Args:
+        boxes (np.ndarray): Current boxes, shape (N, 7).
+        qboxes (np.ndarray): Boxes to avoid, shape (K, 7).
+
+    Returns:
+        np.ndarray: A boolean matrix of shape (N, K), where True indicates a collision.
+    """
+    # Get corners from box formats (OpenPCDet method)
+    corners = box_utils.boxes_to_corners_3d(boxes)  # (N, 8, 3)
+    qcorners = box_utils.boxes_to_corners_3d(qboxes)  # (K, 8, 3)
+
+    N = corners.shape[0]
+    K = qcorners.shape[0]
+    ret = np.zeros((N, K), dtype=np.bool_)
+    
+    # Check for AABB collision first
+    for i in range(N):
+        for j in range(K):
+            # AABB overlap check
+            if (np.max(corners[i, :, 0]) >= np.min(qcorners[j, :, 0]) and
+                np.min(corners[i, :, 0]) <= np.max(qcorners[j, :, 0]) and
+                np.max(corners[i, :, 1]) >= np.min(qcorners[j, :, 1]) and
+                np.min(corners[i, :, 1]) <= np.max(qcorners[j, :, 1]) and
+                np.max(corners[i, :, 2]) >= np.min(qcorners[j, :, 2]) and
+                np.min(corners[i, :, 2]) <= np.max(qcorners[j, :, 2])):
+                
+                # Check for actual edge intersections if AABBs overlap
+                for k in range(8):  # Check all edges of box i
+                    for l in range(8):  # Check all edges of box j
+                        A = corners[i][k]
+                        B = corners[i][(k + 1) % 8]
+                        C = qcorners[j][l]
+                        D = qcorners[j][(l + 1) % 8]
+                        
+                        # Using vector cross products to check for intersection
+                        if lines_intersect(A, B, C, D):
+                            ret[i, j] = True
+                            break
+                    if ret[i, j]:  # If a collision is found, no need to check further
+                        print('Collision found after local rotation')
+                        break
+    return ret
+
+def lines_intersect(A, B, C, D):
+    """Check if line segments AB and CD intersect.
+
+    Args:
+        A, B, C, D (np.ndarray): Points defining the line segments.
+
+    Returns:
+        bool: True if the line segments intersect, False otherwise.
+    """
+    def ccw(P, Q, R):
+        return (R[1] - P[1]) * (Q[0] - P[0]) > (Q[1] - P[1]) * (R[0] - P[0])
+    return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
+
+#######################################################################################################################################
+
 def local_rotation(gt_boxes, points, rot_range):
     """
     Args:
@@ -336,7 +403,7 @@ def local_rotation(gt_boxes, points, rot_range):
         centroid_y = box[1]
         centroid_z = box[2]
         
-        # tranlation to axis center
+        # translation to axis center
         points[mask, 0] -= centroid_x
         points[mask, 1] -= centroid_y
         points[mask, 2] -= centroid_z
@@ -348,7 +415,7 @@ def local_rotation(gt_boxes, points, rot_range):
         points[mask, :] = common_utils.rotate_points_along_z(points[np.newaxis, mask, :], np.array([noise_rotation]))[0]
         box[0:3] = common_utils.rotate_points_along_z(box[np.newaxis, np.newaxis, 0:3], np.array([noise_rotation]))[0][0]
         
-        # tranlation back to original position
+        # translation back to original position
         points[mask, 0] += centroid_x
         points[mask, 1] += centroid_y
         points[mask, 2] += centroid_z
@@ -362,9 +429,11 @@ def local_rotation(gt_boxes, points, rot_range):
                 np.hstack((gt_boxes[idx, 7:9], np.zeros((gt_boxes.shape[0], 1))))[np.newaxis, :, :],
                 np.array([noise_rotation])
             )[0][:, 0:2]
-    
-    return gt_boxes, points
 
+
+    if rot_range:
+        return gt_boxes, points, noise_rotation, True
+    return gt_boxes, points, False
 
 def local_frustum_dropout_top(gt_boxes, points, intensity_range):
     """
