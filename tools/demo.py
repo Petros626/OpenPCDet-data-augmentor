@@ -7,7 +7,7 @@ try:
     from visual_utils import open3d_vis_utils as V
     OPEN3D_FLAG = True
 except:
-    import mayavi.mlab as mlab
+    import mayavi.mlab as mlab # just not installed
     from visual_utils import visualize_utils as V
     OPEN3D_FLAG = False
 
