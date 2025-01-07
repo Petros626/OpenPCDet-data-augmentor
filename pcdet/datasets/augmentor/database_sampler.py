@@ -23,27 +23,29 @@ class DataBaseSampler(object):
 
         self.logger = logger
         self.db_infos = {}
+        
         for class_name in class_names:
             self.db_infos[class_name] = []
 
         self.use_shared_memory = sampler_cfg.get('USE_SHARED_MEMORY', False)
 
-        for db_info_path in sampler_cfg.DB_INFO_PATH:
+        for db_info_path in sampler_cfg.DB_INFO_PATH: # contains an extracted class (Car,Pedestrian,Cyclist) of gt_database
             db_info_path = self.root_path.resolve() / db_info_path
+
             if not db_info_path.exists():
                 assert len(sampler_cfg.DB_INFO_PATH) == 1
                 sampler_cfg.DB_INFO_PATH[0] = sampler_cfg.BACKUP_DB_INFO['DB_INFO_PATH']
                 sampler_cfg.DB_DATA_PATH[0] = sampler_cfg.BACKUP_DB_INFO['DB_DATA_PATH']
                 db_info_path = self.root_path.resolve() / sampler_cfg.DB_INFO_PATH[0]
                 sampler_cfg.NUM_POINT_FEATURES = sampler_cfg.BACKUP_DB_INFO['NUM_POINT_FEATURES']
-
-            with open(str(db_info_path), 'rb') as f:
+                
+            with open(str(db_info_path), 'rb') as f: # loading the 'kitti_dbinfos_train.pkl' with classes
                 infos = pickle.load(f)
                 [self.db_infos[cur_class].extend(infos[cur_class]) for cur_class in class_names]
 
         for func_name, val in sampler_cfg.PREPARE.items():
             self.db_infos = getattr(self, func_name)(self.db_infos, val)
-
+    
         self.gt_database_data_key = self.load_db_to_shared_memory() if self.use_shared_memory else None
 
         self.sample_groups = {}
@@ -60,6 +62,7 @@ class DataBaseSampler(object):
                 'pointer': len(self.db_infos[class_name]),
                 'indices': np.arange(len(self.db_infos[class_name]))
             }
+
 
     def __getstate__(self):
         d = dict(self.__dict__)
@@ -81,17 +84,19 @@ class DataBaseSampler(object):
                 dist.barrier()
             self.logger.info('GT database has been removed from shared memory')
 
+    # here the samples from ~/OpenPCDet/data/kitti/gt_database were loaded
     def load_db_to_shared_memory(self):
-        self.logger.info('Loading GT database to shared memory')
+        self.logger.info('DatabaseSampler: loading GT database from ~/OpenPCDet/data/kitti/gt_database to shared memory')
         cur_rank, world_size, num_gpus = common_utils.get_dist_info(return_gpu_per_machine=True)
 
         assert self.sampler_cfg.DB_DATA_PATH.__len__() == 1, 'Current only support single DB_DATA'
         db_data_path = self.root_path.resolve() / self.sampler_cfg.DB_DATA_PATH[0]
+        print('PATH: ',db_data_path)
         sa_key = self.sampler_cfg.DB_DATA_PATH[0]
 
         if cur_rank % num_gpus == 0 and not os.path.exists(f"/dev/shm/{sa_key}"):
             gt_database_data = np.load(db_data_path)
-            common_utils.sa_create(f"shm://{sa_key}", gt_database_data)
+            common_utils.sa_create(f"shm://{sa_key}", gt_database_data) # save/hold the gt_database in /dev/shm/
 
         if num_gpus > 1:
             dist.barrier()
@@ -107,7 +112,7 @@ class DataBaseSampler(object):
                 if info['difficulty'] not in removed_difficulty
             ]
             if self.logger is not None:
-                self.logger.info('Database filter by difficulty %s: %d => %d' % (key, pre_len, len(new_db_infos[key])))
+                self.logger.info('DatabaseSampler: database filter by difficulty %s: %d => %d' % (key, pre_len, len(new_db_infos[key])))
         return new_db_infos
 
     def filter_by_min_points(self, db_infos, min_gt_points_list):
@@ -121,7 +126,7 @@ class DataBaseSampler(object):
                         filtered_infos.append(info)
 
                 if self.logger is not None:
-                    self.logger.info('Database filter by min points %s: %d => %d' %
+                    self.logger.info('DatabaseSampler: database filter by min points %s: %d => %d' %
                                      (name, len(db_infos[name]), len(filtered_infos)))
                 db_infos[name] = filtered_infos
 
@@ -280,6 +285,7 @@ class DataBaseSampler(object):
         mv_height = None
         # filter out box2d iou > thres
         if self.sampler_cfg.get('USE_ROAD_PLANE', False):
+            print(f"Using road planes for gt_database: {self.sampler_cfg.get('USE_ROAD_PLANE')}")
             sampled_boxes, mv_height = self.put_boxes_on_road_planes(
                 sampled_boxes, data_dict['road_plane'], data_dict['calib']
             )
@@ -313,8 +319,8 @@ class DataBaseSampler(object):
             raise NotImplementedError
 
         return sampled_boxes2d, mv_height, ret_valid_mask
-
-    def initilize_image_aug_dict(self, data_dict, gt_boxes_mask):
+    
+    def initialize_image_aug_dict(self, data_dict, gt_boxes_mask):
         img_aug_gt_dict = None
         if self.img_aug_type is None:
             pass
@@ -373,14 +379,14 @@ class DataBaseSampler(object):
             )
             data_dict.pop('calib')
             data_dict.pop('road_plane')
-
+        print(f'DatabaseSampler: no. objects and names before gt_sampling {len(gt_boxes), len(gt_names)}')
         obj_points_list = []
 
         # convert sampled 3D boxes to image plane
-        img_aug_gt_dict = self.initilize_image_aug_dict(data_dict, gt_boxes_mask)
+        img_aug_gt_dict = self.initialize_image_aug_dict(data_dict, gt_boxes_mask)
 
         if self.use_shared_memory:
-            gt_database_data = SharedArray.attach(f"shm://{self.gt_database_data_key}")
+            gt_database_data = SharedArray.attach(f"shm://{self.gt_database_data_key}") # access of gt_database samples from memory and process them.
             gt_database_data.setflags(write=0)
         else:
             gt_database_data = None
@@ -391,12 +397,13 @@ class DataBaseSampler(object):
                 obj_points = copy.deepcopy(gt_database_data[start_offset:end_offset])
             else:
                 file_path = self.root_path / info['path']
+                print(f'DatabaseSampler: loading GT database from {file_path}')
 
                 obj_points = np.fromfile(str(file_path), dtype=np.float32).reshape(
                     [-1, self.sampler_cfg.NUM_POINT_FEATURES])
                 if obj_points.shape[0] != info['num_points_in_gt']:
                     obj_points = np.fromfile(str(file_path), dtype=np.float64).reshape(-1, self.sampler_cfg.NUM_POINT_FEATURES)
-
+                print(f'DataBaseSampler: loaded {obj_points.shape[0]} object points from: {file_path}')
             assert obj_points.shape[0] == info['num_points_in_gt']
             obj_points[:, :3] += info['box3d_lidar'][:3].astype(np.float32)
 
@@ -433,13 +440,14 @@ class DataBaseSampler(object):
         points = np.concatenate([obj_points[:, :points.shape[-1]], points], axis=0)
         gt_names = np.concatenate([gt_names, sampled_gt_names], axis=0)
         gt_boxes = np.concatenate([gt_boxes, sampled_gt_boxes], axis=0)
+        print(f"DataBaseSampler: no. objects and names after gt_sampling: {len(gt_boxes), len(gt_names)}")
         data_dict['gt_boxes'] = gt_boxes
         data_dict['gt_names'] = gt_names
         data_dict['points'] = points
 
         if self.img_aug_type is not None:
             data_dict = self.copy_paste_to_image(img_aug_gt_dict, data_dict, points)
-
+        print(f"DataBaseSampler: adding {len(data_dict['gt_boxes'])} gt samples completed")
         return data_dict
 
     def __call__(self, data_dict):
@@ -462,6 +470,7 @@ class DataBaseSampler(object):
             if self.limit_whole_scene:
                 num_gt = np.sum(class_name == gt_names)
                 sample_group['sample_num'] = str(int(self.sample_class_num[class_name]) - num_gt)
+                print(f"DatabaseSampler: limiting whole scene: {self.limit_whole_scene}")
             if int(sample_group['sample_num']) > 0:
                 sampled_dict = self.sample_with_fixed_number(class_name, sample_group)
 

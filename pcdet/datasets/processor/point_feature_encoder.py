@@ -43,6 +43,7 @@ class PointFeatureEncoder(object):
     def absolute_coordinates_encoding(self, points=None):
         if points is None:
             num_output_features = len(self.used_feature_list)
+            print('PointFeatureEncoder: absolute_coordinates_encoding() called with no points. Number output features:', num_output_features)
             return num_output_features
 
         assert points.shape[-1] == len(self.src_feature_list)
@@ -53,5 +54,7 @@ class PointFeatureEncoder(object):
             idx = self.src_feature_list.index(x)
             point_feature_list.append(points[:, idx:idx+1])
         point_features = np.concatenate(point_feature_list, axis=1)
-        
+
+        print(f'PointFeatureEncoder: absolute_coordinates_encoding() processed {points.shape[0]} points. Point features shape: {point_features.shape}')
+
         return point_features, True
