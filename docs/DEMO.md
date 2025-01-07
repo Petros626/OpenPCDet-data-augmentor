@@ -44,7 +44,7 @@ python demo.py --cfg_file cfgs/kitti_models/pv_rcnn.yaml \
 ```
 In detail:
 ```shell
-python demo.py --cfg_file /home/rlab10/OpenPCDet/tools/cfgs/kitti_models/pointpillar.yaml --ckpt /home/rlab10/OpenPCDet/pointpillar_7728.pth --data_path /home/rlab10/OpenPCDet/data/kitti/000006.bin
+python demo.py --cfg_file ~/OpenPCDet/tools/cfgs/kitti_models/pointpillar.yaml --ckpt ~/OpenPCDet/pointpillar_7728.pth --data_path ~/OpenPCDet/data/kitti/000006.bin
 ```
 
 Here `${POINT_CLOUD_DATA}` could be in any of the following format: 
