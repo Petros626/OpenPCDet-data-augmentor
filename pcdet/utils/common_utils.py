@@ -24,6 +24,10 @@ def limit_period(val, offset=0.5, period=np.pi):
     return ans.numpy() if is_numpy else ans
 
 
+def limit_period_numpy(val, offset=0.5, period=np.pi):
+    return (val + offset) % period - offset
+
+
 def drop_info_with_name(info, name):
     ret_info = {}
     keep_indices = [i for i, x in enumerate(info['name']) if x != name]
