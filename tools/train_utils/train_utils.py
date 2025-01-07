@@ -30,7 +30,7 @@ def train_one_epoch(model, optimizer, train_loader, model_func, lr_scheduler, ac
     end = time.time()
     for cur_it in range(start_it, total_it_each_epoch):
         try:
-            batch = next(dataloader_iter)
+            batch = next(dataloader_iter) # here the data are loaded
         except StopIteration:
             dataloader_iter = iter(train_loader)
             batch = next(dataloader_iter)
@@ -263,7 +263,7 @@ def disable_augmentation_hook(hook_config, dataloader, total_epochs, cur_epoch, 
         if DisableAugmentationHook is not None:
             num_last_epochs = DisableAugmentationHook.NUM_LAST_EPOCHS
             if (total_epochs - num_last_epochs) <= cur_epoch and not flag:
-                DISABLE_AUG_LIST = DisableAugmentationHook.DISABLE_AUG_LIST
+                DISABLE_AUG_LIST = DisableAugmentationHook.DISABLE_AUG_LIST # read from yaml file
                 dataset_cfg=cfg.DATA_CONFIG
                 logger.info(f'Disable augmentations: {DISABLE_AUG_LIST}')
                 dataset_cfg.DATA_AUGMENTOR.DISABLE_AUG_LIST = DISABLE_AUG_LIST
