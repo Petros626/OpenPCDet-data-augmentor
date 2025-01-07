@@ -1,4 +1,52 @@
-# Installation
+# Installation updated (Anaconda env)
+
+### Requirements
+a. Create a conda environment
+```shell
+conda create --name openpcdet python=3.8
+```
+
+b. Uninstall of old CUDA version
+
+Follow these guides to remove previous versions of CUDA.
+https://gist.github.com/kmhofmann/cee7c0053da8cc09d62d74a6a4c1c5e4
+
+https://medium.com/virtual-force-inc/a-step-by-step-guide-to-install-nvidia-drivers-and-cuda-toolkit-855c75efcdb6
+
+With `nvidia-smi` you will see the max. supported version of CUDA. After you installed a proper versions verify with `nvcc --version` your fresh installed CUDA version.
+
+c. Installation of OpenPCDet with Anaconda
+
+```shell
+conda activate openpcdet
+```
+Go to https://pytorch.org/ to copy the command for installing PyTorch with the corresponding CUDA version.
+
+```shell
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+```
+Install the SparseConv library from [`[spconv]`](https://github.com/traveller59/spconv). In the table you see CUDA version and the related installation command.
+```shell
+pip install spconv-cu118
+```
+
+### Install
+Clone the OpenPCDet repository from my account and navigate into it.
+```shell
+git clone https://github.com/Petros626/OpenPCDet-data-augmentor.git
+```
+```shell
+cd OpenPCDet
+```
+Install this `pcdet` library and its dependent libraries by running the following command
+```shell
+pip install -r requirements.txt
+python setup.py develop
+```
+
+
+
+# Installation (old)
 
 ### Requirements
 All the codes are tested in the following environment:

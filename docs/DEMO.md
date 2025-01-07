@@ -32,13 +32,21 @@ y-axis points towards to the left direction, and z-axis points towards to the to
    points[:, 3] = 0 
    np.save(`my_data.npy`, points) 
    ```      
-  
-4. Run the demo with a pretrained model (e.g. PV-RCNN) and your custom point cloud data as follows:
+4. Download a model from the [`Model Zoo`](https://github.com/Petros626/OpenPCDet-data-augmentor?tab=readme-ov-file#model-zoo) e.g. PointPillar.
+   
+   Place the `.pth` file somewhere in the folder e.g. `~/OpenPCDet/pointpillar_7728.pth`.
+
+5. Run the demo with a pretrained model (e.g. PV-RCNN) and your custom point cloud data as follows:
 ```shell
 python demo.py --cfg_file cfgs/kitti_models/pv_rcnn.yaml \
     --ckpt pv_rcnn_8369.pth \
     --data_path ${POINT_CLOUD_DATA}
 ```
+In detail:
+```shell
+python demo.py --cfg_file /home/rlab10/OpenPCDet/tools/cfgs/kitti_models/pointpillar.yaml --ckpt /home/rlab10/OpenPCDet/pointpillar_7728.pth --data_path /home/rlab10/OpenPCDet/data/kitti/000006.bin
+```
+
 Here `${POINT_CLOUD_DATA}` could be in any of the following format: 
 * Your transformed custom data with a single numpy file like `my_data.npy`.  
 * Your transformed custom data with a directory to test with multiple point cloud data.
