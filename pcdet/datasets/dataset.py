@@ -18,20 +18,20 @@ class DatasetTemplate(torch_data.Dataset):
         self.training = training
         self.class_names = class_names
         self.logger = logger
-        self.root_path = root_path if root_path is not None else Path(self.dataset_cfg.DATA_PATH)
-        self.logger = logger
+        self.root_path = root_path if root_path is not None else Path(self.dataset_cfg.DATA_PATH) 
+        
         if self.dataset_cfg is None or class_names is None:
             return
 
-        self.point_cloud_range = np.array(self.dataset_cfg.POINT_CLOUD_RANGE, dtype=np.float32)
-        self.point_feature_encoder = PointFeatureEncoder(
+        self.point_cloud_range = np.array(self.dataset_cfg.POINT_CLOUD_RANGE, dtype=np.float32) 
+        self.point_feature_encoder = PointFeatureEncoder( 
             self.dataset_cfg.POINT_FEATURE_ENCODING,
             point_cloud_range=self.point_cloud_range
         )
         self.data_augmentor = DataAugmentor(
             self.root_path, self.dataset_cfg.DATA_AUGMENTOR, self.class_names, logger=self.logger
         ) if self.training else None
-        self.data_processor = DataProcessor(
+        self.data_processor = DataProcessor( 
             self.dataset_cfg.DATA_PROCESSOR, point_cloud_range=self.point_cloud_range,
             training=self.training, num_point_features=self.point_feature_encoder.num_point_features
         )
@@ -155,7 +155,7 @@ class DatasetTemplate(torch_data.Dataset):
         data_dict['lidar_aug_matrix'] = lidar_aug_matrix
         return data_dict
 
-    def prepare_data(self, data_dict):
+    def prepare_data(self, data):
         """
         Args:
             data_dict:
@@ -165,7 +165,7 @@ class DatasetTemplate(torch_data.Dataset):
                 ...
 
         Returns:
-            data_dict:
+            data_list:
                 frame_id: string
                 points: (N, 3 + C_in)
                 gt_boxes: optional, (N, 7 + C) [x, y, z, dx, dy, dz, heading, ...]
@@ -176,46 +176,74 @@ class DatasetTemplate(torch_data.Dataset):
                 voxel_num_points: optional (num_voxels)
                 ...
         """
+        print('DatasetTemplate: prepare_data() called')
         if self.training:
-            assert 'gt_boxes' in data_dict, 'gt_boxes should be provided for training'
-            gt_boxes_mask = np.array([n in self.class_names for n in data_dict['gt_names']], dtype=np.bool_)
+            assert 'gt_boxes' in data, 'gt_boxes should be provided for training'
+            gt_boxes_mask = np.array([n in self.class_names for n in data['gt_names']], dtype=np.bool_)
             
-            if 'calib' in data_dict:
-                calib = data_dict['calib']
-            data_dict = self.data_augmentor.forward(
-                data_dict={
-                    **data_dict,
-                    'gt_boxes_mask': gt_boxes_mask
-                }
+            if 'calib' in data:
+                calib = data['calib']
+
+            """ 
+            Calibration file explained:
+            P0, P1, P2, P3:
+            These matrices are the projection matrices for various cameras. 
+            They transform 3D (LiDAR) world coordinates into 2D(Camera) image coordinates.
+            R0_rect:
+            This is the rectification matrix used to bring all camera images onto a common plane. 
+            It is therefore used to align the camera data correctly.
+            Tr_velo_to_cam:
+            This matrix is the transformation matrix that translates the coordinates from LiDAR to 
+            the camera coordinate system.
+            Tr_imu_to_velo:
+            This matrix describes the transformation of IMU coordinates into the LiDAR coordinate system. 
+            """
+
+            data_list, applied_augmentors = self.data_augmentor.forward(
+                 data_dict={
+                     **data,
+                     'gt_boxes_mask': gt_boxes_mask
+                 }
             )
-            if 'calib' in data_dict:
-                data_dict['calib'] = calib
-        data_dict = self.set_lidar_aug_matrix(data_dict)
-        if data_dict.get('gt_boxes', None) is not None:
-            selected = common_utils.keep_arrays_by_name(data_dict['gt_names'], self.class_names)
-            data_dict['gt_boxes'] = data_dict['gt_boxes'][selected]
-            data_dict['gt_names'] = data_dict['gt_names'][selected]
-            gt_classes = np.array([self.class_names.index(n) + 1 for n in data_dict['gt_names']], dtype=np.int32)
-            gt_boxes = np.concatenate((data_dict['gt_boxes'], gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
-            data_dict['gt_boxes'] = gt_boxes
 
-            if data_dict.get('gt_boxes2d', None) is not None:
-                data_dict['gt_boxes2d'] = data_dict['gt_boxes2d'][selected]
+            # iterates over each data_dict in data_list that you have previously created. 
+            # data_list contains several dictionaries: the original, unmodified sample and all (NxNAME: in .yaml) augmented samples.
+            for data_dict in data_list:
 
-        if data_dict.get('points', None) is not None:
-            data_dict = self.point_feature_encoder.forward(data_dict)
+                if 'calib' in data_dict:
+                    data_dict['calib'] = calib
 
-        data_dict = self.data_processor.forward(
-            data_dict=data_dict
-        )
+                # important matrix (4x4) for later data augmentation
+                data_dict = self.set_lidar_aug_matrix(data_dict)
+                if data_dict.get('gt_boxes', None) is not None:
+                    selected = common_utils.keep_arrays_by_name(data_dict['gt_names'], self.class_names)
+                    data_dict['gt_boxes'] = data_dict['gt_boxes'][selected]
+                    data_dict['gt_names'] = data_dict['gt_names'][selected]
+                    # index added to gt_boxes (Car: 1, Pedstrian: 2, Cyclist: 3)
+                    gt_classes = np.array([self.class_names.index(n) + 1 for n in data_dict['gt_names']], dtype=np.int32)
+                    # already transformed 3D boxes LiDAR coord. + add number for the class
+                    gt_boxes = np.concatenate((data_dict['gt_boxes'], gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
+                    data_dict['gt_boxes'] = gt_boxes
 
-        if self.training and len(data_dict['gt_boxes']) == 0:
-            new_index = np.random.randint(self.__len__())
-            return self.__getitem__(new_index)
+                    if data_dict.get('gt_boxes2d', None) is not None:
+                        data_dict['gt_boxes2d'] = data_dict['gt_boxes2d'][selected]
 
-        data_dict.pop('gt_names', None)
+                if data_dict.get('points', None) is not None:
+                    data_dict = self.point_feature_encoder.forward(data_dict)
 
-        return data_dict
+                data_dict = self.data_processor.forward(
+                    data_dict=data_dict
+                )
+                # TODO: check if Ultralytics YOLOv8 OBB has the same mechanism
+                if self.training and len(data_dict['gt_boxes']) == 0:
+                    new_index = np.random.randint(self.__len__())
+                    return self.__getitem__(new_index)
+                
+                # keep the label names, but also contained as index in gt_boxes[7]
+                #data_dict.pop('gt_names', None) 
+                
+        # "original" dict with N augmented dicts as list
+        return data_list, applied_augmentors
 
     @staticmethod
     def collate_batch(batch_list, _unused=False):
@@ -229,12 +257,13 @@ class DatasetTemplate(torch_data.Dataset):
 
         for key, val in data_dict.items():
             try:
-                if key in ['voxels', 'voxel_num_points']:
+                if key in ['voxels', 'voxel_num_points']: # optional keys
                     if isinstance(val[0], list):
                         batch_size_ratio = len(val[0])
                         val = [i for item in val for i in item]
-                    ret[key] = np.concatenate(val, axis=0)
-                elif key in ['points', 'voxel_coords']:
+                        ret[key] = np.concatenate(val, axis=0)
+
+                elif key in ['points', 'voxel_coords']: # points present in data_dict!, optional key voxel_coords
                     coors = []
                     if isinstance(val[0], list):
                         val =  [i for item in val for i in item]
@@ -242,28 +271,29 @@ class DatasetTemplate(torch_data.Dataset):
                         coor_pad = np.pad(coor, ((0, 0), (1, 0)), mode='constant', constant_values=i)
                         coors.append(coor_pad)
                     ret[key] = np.concatenate(coors, axis=0)
-                elif key in ['gt_boxes']:
+
+                elif key in ['gt_boxes']: # present as key in data_dict!
                     max_gt = max([len(x) for x in val])
                     batch_gt_boxes3d = np.zeros((batch_size, max_gt, val[0].shape[-1]), dtype=np.float32)
                     for k in range(batch_size):
                         batch_gt_boxes3d[k, :val[k].__len__(), :] = val[k]
                     ret[key] = batch_gt_boxes3d
 
-                elif key in ['roi_boxes']:
+                elif key in ['roi_boxes']: # optional key
                     max_gt = max([x.shape[1] for x in val])
                     batch_gt_boxes3d = np.zeros((batch_size, val[0].shape[0], max_gt, val[0].shape[-1]), dtype=np.float32)
                     for k in range(batch_size):
                         batch_gt_boxes3d[k,:, :val[k].shape[1], :] = val[k]
                     ret[key] = batch_gt_boxes3d
 
-                elif key in ['roi_scores', 'roi_labels']:
+                elif key in ['roi_scores', 'roi_labels']: # optional keys
                     max_gt = max([x.shape[1] for x in val])
                     batch_gt_boxes3d = np.zeros((batch_size, val[0].shape[0], max_gt), dtype=np.float32)
                     for k in range(batch_size):
                         batch_gt_boxes3d[k,:, :val[k].shape[1]] = val[k]
                     ret[key] = batch_gt_boxes3d
 
-                elif key in ['gt_boxes2d']:
+                elif key in ['gt_boxes2d']: # optional keys
                     max_boxes = 0
                     max_boxes = max([len(x) for x in val])
                     batch_boxes2d = np.zeros((batch_size, max_boxes, val[0].shape[-1]), dtype=np.float32)
@@ -271,7 +301,8 @@ class DatasetTemplate(torch_data.Dataset):
                         if val[k].size > 0:
                             batch_boxes2d[k, :val[k].__len__(), :] = val[k]
                     ret[key] = batch_boxes2d
-                elif key in ["images", "depth_maps"]:
+
+                elif key in ["images", "depth_maps"]: # optional keys
                     # Get largest image size (H, W)
                     max_h = 0
                     max_w = 0
@@ -299,9 +330,11 @@ class DatasetTemplate(torch_data.Dataset):
 
                         images.append(image_pad)
                     ret[key] = np.stack(images, axis=0)
+
                 elif key in ['calib']:
                     ret[key] = val
-                elif key in ["points_2d"]:
+
+                elif key in ["points_2d"]: # optional key
                     max_len = max([len(_val) for _val in val])
                     pad_value = 0
                     points = []
@@ -313,7 +346,8 @@ class DatasetTemplate(torch_data.Dataset):
                                 constant_values=pad_value)
                         points.append(points_pad)
                     ret[key] = np.stack(points, axis=0)
-                elif key in ['camera_imgs']:
+
+                elif key in ['camera_imgs']: # optional key
                     ret[key] = torch.stack([torch.stack(imgs,dim=0) for imgs in val],dim=0)
                 else:
                     ret[key] = np.stack(val, axis=0)
