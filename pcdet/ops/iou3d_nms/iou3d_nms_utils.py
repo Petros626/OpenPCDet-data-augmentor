@@ -64,6 +64,8 @@ def boxes_iou3d_gpu(boxes_a, boxes_b):
 
     # bev overlap
     overlaps_bev = torch.cuda.FloatTensor(torch.Size((boxes_a.shape[0], boxes_b.shape[0]))).zero_()  # (N, M)
+    # Replace deprecated usage with torch.zeros and specify device='cuda'
+    # overlaps_bev = torch.zeros((boxes_a.shape[0], boxes_b.shape[0]), dtype=torch.float32, device='cuda')
     iou3d_nms_cuda.boxes_overlap_bev_gpu(boxes_a.contiguous(), boxes_b.contiguous(), overlaps_bev)
 
     max_of_min = torch.max(boxes_a_height_min, boxes_b_height_min)
