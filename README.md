@@ -1,8 +1,10 @@
-<img src="docs/open_mmlab.png" align="right" width="30%">
+
 
 # OpenPCDet: modified as data augmentor to generate BEV images with labels from LiDAR data.
 
 Add description here how to create the data and generate the images with labels
+
+<img src="docs/open_mmlab.png" align="right" width="30%">
 
 # OpenPCDet
 
