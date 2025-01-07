@@ -21,10 +21,10 @@ class Object3d(object):
         self.src = line
         self.cls_type = label[0]
         self.cls_id = cls_type_to_id(self.cls_type)
-        self.truncation = float(label[1])
+        self.truncation = float(label[1]) # [0...1] 0 (non-truncated), 1 (truncated)
         self.occlusion = float(label[2])  # 0:fully visible 1:partly occluded 2:largely occluded 3:unknown
         self.alpha = float(label[3])
-        self.box2d = np.array((float(label[4]), float(label[5]), float(label[6]), float(label[7])), dtype=np.float32)
+        self.box2d = np.array((float(label[4]), float(label[5]), float(label[6]), float(label[7])), dtype=np.float32) # left, top, right, bottom
         self.h = float(label[8])
         self.w = float(label[9])
         self.l = float(label[10])
@@ -36,7 +36,7 @@ class Object3d(object):
         self.level = self.get_kitti_obj_level()
 
     def get_kitti_obj_level(self):
-        height = float(self.box2d[3]) - float(self.box2d[1]) + 1
+        height = float(self.box2d[3]) - float(self.box2d[1]) + 1 # (bottom - top) + 1
 
         if height >= 40 and self.truncation <= 0.15 and self.occlusion <= 0:
             self.level_str = 'Easy'

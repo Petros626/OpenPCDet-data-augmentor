@@ -8,6 +8,7 @@ from ..ops.roiaware_pool3d import roiaware_pool3d_utils
 from . import common_utils
 
 
+
 def in_hull(p, hull):
     """
     :param p: (N, K) test points
@@ -138,16 +139,24 @@ def boxes3d_kitti_camera_to_lidar(boxes3d_camera, calib):
         calib:
 
     Returns:
-        boxes3d_lidar: [x, y, z, dx, dy, dz, heading], (x, y, z) is the box center
+        boxes3d_lidar: [x, y, z, dx(l), dy(w), dz(h), heading], (x, y, z) is the box center
 
     """
+    #print(f'{boxes3d_kitti_camera_to_lidar.__name__} method was called') # DEBUG
     boxes3d_camera_copy = copy.deepcopy(boxes3d_camera)
-    xyz_camera, r = boxes3d_camera_copy[:, 0:3], boxes3d_camera_copy[:, 6:7]
+    xyz_camera, r = boxes3d_camera_copy[:, 0:3], boxes3d_camera_copy[:, 6:7] # r = [-pi...pi] (cam frame)
+    # switch h,w,l here: [x, y, z, h, w, l, ry] -> [x, y, z, l, h, w, ry]
     l, h, w = boxes3d_camera_copy[:, 3:4], boxes3d_camera_copy[:, 4:5], boxes3d_camera_copy[:, 5:6]
 
     xyz_lidar = calib.rect_to_lidar(xyz_camera)
     xyz_lidar[:, 2] += h[:, 0] / 2
-    return np.concatenate([xyz_lidar, l, w, h, -(r + np.pi / 2)], axis=-1)
+    """
+    ry = 0     -> r + np.pi / 2  -> -pi/2
+    ry = pi/2  -> r + np.pi / 2  -> -pi
+    ry = -pi/2 -> r + np.pi / 2  -> -> 0
+    ry = pi    -> r + np.pi / 2  -> pi/2
+    """
+    return np.concatenate([xyz_lidar, l, w, h, -(r + np.pi / 2)], axis=-1) # heading = [-pi...pi] (lidar frame)
 
 
 def boxes3d_kitti_fakelidar_to_lidar(boxes3d_lidar):
@@ -324,6 +333,18 @@ def boxes3d_lidar_to_aligned_bev_boxes(boxes3d):
     aligned_bev_boxes = torch.cat((boxes3d[:, 0:2] - choose_dims / 2, boxes3d[:, 0:2] + choose_dims / 2), dim=1)
     return aligned_bev_boxes
 
+def boxes3d_lidar_to_aligned_bev_boxes_numpy(boxes3d, offset=0.5):
+    """
+    Args:
+        boxes3d: (N, 7) [x, y, z, dx, dy, dz, heading] in lidar coordinate
+    Returns:
+        aligned_bev_boxes: (N, 4) [x1, y1, x2, y2] in lidar coordinate
+    """
+    rot_angle = np.abs(common_utils.limit_period_numpy(boxes3d[:, 6], offset=0.5, period=np.pi))
+    choose_dims = np.where(rot_angle[:, None] < np.pi / 4, boxes3d[:, [3, 4]], boxes3d[:, [4, 3]])
+    aligned_bev_boxes_np = np.column_stack((boxes3d[:, 0:2] - choose_dims / 2,boxes3d[:, 0:2] + choose_dims / 2  ))
+
+    return aligned_bev_boxes_np
 
 def boxes3d_nearest_bev_iou(boxes_a, boxes_b):
     """
