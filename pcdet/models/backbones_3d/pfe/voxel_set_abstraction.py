@@ -328,6 +328,8 @@ class VoxelSetAbstraction(nn.Module):
             new_xyz=new_xyz,
             new_xyz_batch_cnt=new_xyz_batch_cnt,
             features=xyz_features.contiguous(),
+            # just in case above has a bug # https://github.com/open-mmlab/OpenPCDet/issues/762
+            # features = xyz_features.contiguous() if xyz_features is not None else None,
         )
         return pooled_features
 
