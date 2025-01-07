@@ -11,3 +11,6 @@ torchvision
 SharedArray
 opencv-python
 pyquaternion
+av2==0.2.0
+kornia==0.6.5
+open3d
