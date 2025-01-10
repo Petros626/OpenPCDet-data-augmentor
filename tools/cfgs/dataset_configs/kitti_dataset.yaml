@@ -41,7 +41,7 @@ FOV_POINTS_ONLY: True
 # Using the road plane increases the mAP experienced by different users from "issues". 
 # Road planes help to create the samples in folder gt_database better, than the default algorithm.
 DATA_AUGMENTOR:
-    DISABLE_AUG_LIST: ['random_local_rotation_v2']
+    DISABLE_AUG_LIST: ['placeholder']
     AUG_CONFIG_LIST:
         - NAME: gt_sampling 
           USE_ROAD_PLANE: True
@@ -73,8 +73,9 @@ DATA_AUGMENTOR:
         - NAME: random_local_rotation
           LOCAL_ROT_ANGLE: [-0.15707963267, 0.15707963267] # radiant
 
-        - NAME: random_local_rotation_v2
-          LOCAL_ROT_ANGLE: [-0.15707963267, 0.15707963267] # radiant
+        # NOTE: was just for test purposes.
+        #- NAME: random_local_rotation_v2
+        #  LOCAL_ROT_ANGLE: [-0.15707963267, 0.15707963267] # radiant
           # BEVDetNet paper: not mentioned, but author confirmed it, the accuracy of the model didn't increase that much!
         # - NAME: random_local_translation
         #   LOCAL_TRANSLATION_RANGE: [0, 0.25]

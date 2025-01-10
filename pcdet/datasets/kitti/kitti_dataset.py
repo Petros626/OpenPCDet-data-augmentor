@@ -437,8 +437,8 @@ class KittiDataset(DatasetTemplate):
                 if (used_classes is None) or names[i] in used_classes:
                     db_path = str(filepath.relative_to(self.root_path))  # gt_database/xxxxx.bin
                     db_info = {'name': names[i], 'path': db_path, 'image_idx': sample_idx, 'gt_idx': i,
-                                'box3d_lidar': gt_boxes[i], 'num_points_in_gt': gt_points.shape[0],
-                                'difficulty': difficulty[i], 'bbox': bbox[i], 'score': annos['score'][i]}
+                               'box3d_lidar': gt_boxes[i], 'num_points_in_gt': gt_points.shape[0],
+                               'difficulty': difficulty[i], 'bbox': bbox[i], 'score': annos['score'][i]}
                     if names[i] in all_db_infos:
                         all_db_infos[names[i]].append(db_info)
                     else:

@@ -5,6 +5,7 @@ from pathlib import Path
 from numpy import float32, fromfile, ndarray
 from typing import Union, List, Tuple
 from numpy.typing import NDArray
+from numba import jit
 
 
 # ==============================================================================
@@ -72,7 +73,7 @@ def load_kitti_pointcloud(bin_path: str = None, pkl_path: str = None, sample_idx
                 box_top = [bbox[1] for bbox in box2d] 
                 box_bottom = [bbox[3] for bbox in box2d]
                 heights = [float(bottom) - float(top) + 1 for top, bottom in zip(box_top, box_bottom)]
-                print('heights: ', heights)
+                #print('heights: ', heights)
                 # Pack additional information for validation
                 val_info = {
                     'heights': heights,
@@ -145,7 +146,7 @@ def map_pc2rc(x: float, y: float, row: int, column: int, IMAGE_HEIGHT: int, IMAG
 
     # 3D point cloud value -> column 2D Mapping
     column[0] = int(round(((IMAGE_WIDTH * CELL_SIZE) / 2.0 - y) / (IMAGE_WIDTH * CELL_SIZE) * IMAGE_WIDTH))
-
+   
     return 1 # Return success,if in range and row/column are set
 
 # ==============================================================================
@@ -155,9 +156,10 @@ def map_rc2pc(x: float, y: float, row: int, column: int, IMAGE_HEIGHT: int, IMAG
     if 0 <= row < IMAGE_HEIGHT and 0 <= column < IMAGE_WIDTH:
         # row pixel value -> x Mapping (2D)
         x[0] = float(CELL_SIZE *-1.0 * (row - (IMAGE_HEIGHT / 1.0))) # coordinate system: 1.0 bottom center, 2.0 middle center
+
         # column pixel value -> y Mapping (2D)
         y[0] = float(CELL_SIZE *-1.0 * (column - (IMAGE_WIDTH / 2.0)))
-    
+      
         return 1 # Return success, if in range and x/y are set
 
     return 0
