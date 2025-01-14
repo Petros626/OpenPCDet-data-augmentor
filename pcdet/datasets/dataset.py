@@ -177,13 +177,14 @@ class DatasetTemplate(torch_data.Dataset):
                 ...
         """
         print('DatasetTemplate: prepare_data() called')
+        
         if self.training:
             assert 'gt_boxes' in data, 'gt_boxes should be provided for training'
             gt_boxes_mask = np.array([n in self.class_names for n in data['gt_names']], dtype=np.bool_)
             
             if 'calib' in data:
                 calib = data['calib']
-
+            
             """ 
             Calibration file explained:
             P0, P1, P2, P3:
@@ -198,7 +199,7 @@ class DatasetTemplate(torch_data.Dataset):
             Tr_imu_to_velo:
             This matrix describes the transformation of IMU coordinates into the LiDAR coordinate system. 
             """
-
+            
             data_list, applied_augmentors = self.data_augmentor.forward(
                  data_dict={
                      **data,
@@ -230,11 +231,13 @@ class DatasetTemplate(torch_data.Dataset):
 
                 if data_dict.get('points', None) is not None:
                     data_dict = self.point_feature_encoder.forward(data_dict)
-
+                
                 data_dict = self.data_processor.forward(
                     data_dict=data_dict
                 )
-                # TODO: check if Ultralytics YOLOv8 OBB has the same mechanism
+
+                # NOTE: The DataProcessor related to the .yaml param "REMOVE_OUTSIDE_BOXES: True" will filter out objects (points) and gt_boxes out of the specified
+                # pc range. Samples get replaced by new index (refer to def __len__, class KittiDataset).
                 if self.training and len(data_dict['gt_boxes']) == 0:
                     new_index = np.random.randint(self.__len__())
                     return self.__getitem__(new_index)

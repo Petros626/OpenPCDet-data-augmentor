@@ -521,7 +521,7 @@ class DataAugmentor(object):
         # changes to original_dict will have no effect on data_dict and vice versa.
         original_dict = copy.deepcopy(data_dict)
 
-        # pre-processing for original dict
+        # pre-processing for original dict (ensure heading [-π...π])
         original_dict['gt_boxes'][:, 6] = common_utils.limit_period(
             original_dict['gt_boxes'][:, 6], offset=0.5, period=2 * np.pi
         )
@@ -537,7 +537,7 @@ class DataAugmentor(object):
                 original_dict['gt_boxes2d'] = original_dict['gt_boxes2d'][gt_boxes_mask]
 
             original_dict.pop('gt_boxes_mask')
-
+      
         # list to collate the original dict and the N augmented dicts
         dict_list = [original_dict]
 
@@ -570,7 +570,7 @@ class DataAugmentor(object):
                     temp_dict['gt_boxes2d'] = temp_dict['gt_boxes2d'][gt_boxes_mask]
 
                 temp_dict.pop('gt_boxes_mask')
-
+            
             # add the augmented dicts to the original list
             dict_list.append(temp_dict) 
 

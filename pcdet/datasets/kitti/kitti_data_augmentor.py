@@ -105,7 +105,7 @@ def save_data_list(data_list=None, save_path=save_path, root_path=None, sample_i
         applied_augmentations = [aug_cfg['NAME'] for aug_cfg in aug_config_list]
         aug_str = ', '.join(applied_augmentations)
         print(f"{split} sample_idx: {sample_idx} (original, {aug_str})")
-        #print('%s sample_idx: %s' % (split, sample_id_list))
+        print('%s sample_idx: %s' % (split, sample_id_list))
  
     print('Kitti info train/aug file is saved to %s' % train_filename)
     print('-' * 43 + 'Data saving Done' + '-' * 44 + '\n') 

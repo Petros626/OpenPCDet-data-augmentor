@@ -111,8 +111,8 @@ class DataBaseSampler(object):
                 info for info in dinfos
                 if info['difficulty'] not in removed_difficulty
             ]
-            if self.logger is not None:
-                self.logger.info('DatabaseSampler: database filter by difficulty %s: %d => %d' % (key, pre_len, len(new_db_infos[key])))
+            #if self.logger is not None:
+            #    self.logger.info('DatabaseSampler: database filter by difficulty %s: %d => %d' % (key, pre_len, len(new_db_infos[key])))
         return new_db_infos
 
     def filter_by_min_points(self, db_infos, min_gt_points_list):
@@ -125,9 +125,9 @@ class DataBaseSampler(object):
                     if info['num_points_in_gt'] >= min_num:
                         filtered_infos.append(info)
 
-                if self.logger is not None:
-                    self.logger.info('DatabaseSampler: database filter by min points %s: %d => %d' %
-                                     (name, len(db_infos[name]), len(filtered_infos)))
+                #if self.logger is not None:
+                    #self.logger.info('DatabaseSampler: database filter by min points %s: %d => %d' %
+                    #                 (name, len(db_infos[name]), len(filtered_infos)))
                 db_infos[name] = filtered_infos
 
         return db_infos
@@ -379,7 +379,7 @@ class DataBaseSampler(object):
             )
             data_dict.pop('calib')
             data_dict.pop('road_plane')
-        print(f'DatabaseSampler: no. objects and names before gt_sampling {len(gt_boxes), len(gt_names)}')
+        #print(f'DatabaseSampler: no. objects and names before gt_sampling {len(gt_boxes), len(gt_names)}') 
         obj_points_list = []
 
         # convert sampled 3D boxes to image plane
@@ -397,13 +397,13 @@ class DataBaseSampler(object):
                 obj_points = copy.deepcopy(gt_database_data[start_offset:end_offset])
             else:
                 file_path = self.root_path / info['path']
-                print(f'DatabaseSampler: loading GT database from {file_path}')
+                #print(f'DatabaseSampler: loading GT database from {file_path}')
 
                 obj_points = np.fromfile(str(file_path), dtype=np.float32).reshape(
                     [-1, self.sampler_cfg.NUM_POINT_FEATURES])
                 if obj_points.shape[0] != info['num_points_in_gt']:
                     obj_points = np.fromfile(str(file_path), dtype=np.float64).reshape(-1, self.sampler_cfg.NUM_POINT_FEATURES)
-                print(f'DataBaseSampler: loaded {obj_points.shape[0]} object points from: {file_path}')
+                #print(f'DataBaseSampler: loaded {obj_points.shape[0]} object points from: {file_path}') 
             assert obj_points.shape[0] == info['num_points_in_gt']
             obj_points[:, :3] += info['box3d_lidar'][:3].astype(np.float32)
 
@@ -440,14 +440,14 @@ class DataBaseSampler(object):
         points = np.concatenate([obj_points[:, :points.shape[-1]], points], axis=0)
         gt_names = np.concatenate([gt_names, sampled_gt_names], axis=0)
         gt_boxes = np.concatenate([gt_boxes, sampled_gt_boxes], axis=0)
-        print(f"DataBaseSampler: no. objects and names after gt_sampling: {len(gt_boxes), len(gt_names)}")
+        #print(f"DataBaseSampler: no. objects and names after gt_sampling: {len(gt_boxes), len(gt_names)}") 
         data_dict['gt_boxes'] = gt_boxes
         data_dict['gt_names'] = gt_names
         data_dict['points'] = points
 
         if self.img_aug_type is not None:
             data_dict = self.copy_paste_to_image(img_aug_gt_dict, data_dict, points)
-        print(f"DataBaseSampler: adding {len(data_dict['gt_boxes'])} gt samples completed")
+        #print(f"DataBaseSampler: adding {len(data_dict['gt_boxes'])} gt samples completed") 
         return data_dict
 
     def __call__(self, data_dict):
@@ -470,7 +470,7 @@ class DataBaseSampler(object):
             if self.limit_whole_scene:
                 num_gt = np.sum(class_name == gt_names)
                 sample_group['sample_num'] = str(int(self.sample_class_num[class_name]) - num_gt)
-                print(f"DatabaseSampler: limiting whole scene: {self.limit_whole_scene}")
+                #print(f"DatabaseSampler: limiting whole scene: {self.limit_whole_scene}")
             if int(sample_group['sample_num']) > 0:
                 sampled_dict = self.sample_with_fixed_number(class_name, sample_group)
 

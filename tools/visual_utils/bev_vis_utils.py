@@ -12,10 +12,10 @@ from numpy.typing import NDArray
 
 
 box_colormap = [
-    [255, 255, 255], # not assigned
-    [0, 255, 0], # Car Green
-    [255, 0, 255], # Pedestrian Violet
-    [0, 255, 255], # Cyclist Yellow
+    [0, 0, 0], # 0- not assigned
+    [0, 255, 0], # 1- Car Green
+    [255, 0, 255], # 2 - Pedestrian Violet
+    [0, 255, 255], # 3 - Cyclist Yellow
 ]
 
 class_names = { 
@@ -206,7 +206,7 @@ def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw: float, cls: int,
     y1, y2, y3, y4 = y3, y4, y1, y2
 
     # Remove bev labels for objects outside the BEV image
-    # to avoid false positives - detections not visible on the image plane should be filtered
+    # KITTI readme: "...to avoid false positives - detections not visible on the image plane should be filtered."
     is_fully_visible = not (
         (x1 < 0 or x1 >= bvcols) or
         (x2 < 0 or x2 >= bvcols) or
@@ -234,14 +234,15 @@ def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw: float, cls: int,
     (x1,y2)------(x2,y2)
     """
     nonzero = count_nonzero(sum(roi, axis=2))
+
     if nonzero < 3:  # Detection is considered unreliable with fewer than 3 points
-        return -1, -1, -1, -1
+        return -1, -1, -1, -1, -1, -1, -1, -1, -1, box_colormap[int(0)], [0, 0]
 
     if is_fully_visible: 
         return cls, x1, y1, x2, y2, x3, y3, x4, y4, box_colormap[int(cls)], centroid # Return the coordinates of the four corners of the rotated bounding box in BEV image space
     else:
-        return array([-1, -1, -1, -1]) # # Indicates the box should not be drawn (out of bounds)
-    
+        #return array([-1, -1, -1, -1]) # Indicates the box should not be drawn (out of bounds)
+        return -1, -1, -1, -1, -1, -1, -1, -1, -1, box_colormap[int(0)], [0, 0]
 
 
 

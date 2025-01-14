@@ -24,7 +24,7 @@ class KittiDataset(DatasetTemplate):
         super().__init__(
             dataset_cfg=dataset_cfg, class_names=class_names, training=training, root_path=root_path, logger=logger
         )
-        # print('Class KittiDataset: initializing.') # DEBUG
+        #print('Class KittiDataset: initializing.') # DEBUG
         self.split = self.dataset_cfg.DATA_SPLIT[self.mode]
         self.root_split_path = self.root_path / ('training' if self.split != 'test' else 'testing')
 
@@ -38,8 +38,7 @@ class KittiDataset(DatasetTemplate):
        
 
     def include_kitti_data(self, mode):
-        if self.logger is not None:
-            self.logger.info('KittiDataset: Loading KITTI dataset')
+        print('KittiDataset: loading KITTI dataset')
         kitti_infos = []
 
         for info_path in self.dataset_cfg.INFO_PATH[mode]: # 'train', bc training=True
@@ -50,11 +49,10 @@ class KittiDataset(DatasetTemplate):
             with open(info_path, 'rb') as f:
                 infos = pickle.load(f)
                 kitti_infos.extend(infos)
+
         # Add the newly loaded KITTI dataset information to kitti_infos list.
         self.kitti_infos.extend(kitti_infos)
-
-        if self.logger is not None:
-            self.logger.info('KittiDatset: Total training samples for KITTI dataset: %d' % (len(kitti_infos)))
+        print('KittiDatset: Total training samples for KITTI dataset: %d' % (len(kitti_infos)))
 
     def set_split(self, split):
         super().__init__(
@@ -176,7 +174,7 @@ class KittiDataset(DatasetTemplate):
             
             def process_single_scene_val(sample_idx):
                 print('%s sample_idx: %s' % (self.split, sample_idx))
-                print('Mode: %s, for pre-processing (DataProcessor&PointFeatureEncoder) validation data' % self.mode)
+                print('Mode: %s, for pre-procoessing (DataProcessor & PointFeatureEncoder) validation data' % self.mode)
                 info = {}
                 pc_info = {'num_features': num_features, 'lidar_idx': sample_idx} # num_features: x,y,z,intensity
                 info['point_cloud'] = pc_info
@@ -276,8 +274,9 @@ class KittiDataset(DatasetTemplate):
         import concurrent.futures as futures
             
         def process_single_scene(sample_idx):
-            print('%s sample_idx: %s' % (self.split, sample_idx))
-            print('Pre-processing during data augmentation via __getitem__')  
+            print('KittiDataset: %s sample_idx: %s' % (self.split, sample_idx))
+            print('KittiDataset: pre-processing during data augmentation via __getitem__')
+
             info = {}
             pc_info = {'num_features': num_features, 'lidar_idx': sample_idx} # num_features: x,y,z,intensity
             info['point_cloud'] = pc_info
@@ -360,11 +359,11 @@ class KittiDataset(DatasetTemplate):
                         flag = box_utils.in_hull(pts_fov[:, 0:3], corners_lidar[k])
                         num_points_in_gt[k] = flag.sum()
                     annotations['num_points_in_gt'] = num_points_in_gt
-
-            return info
-
-        sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
         
+            return info
+       
+        sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
+
         # improve the velocity
         with futures.ThreadPoolExecutor(num_workers) as executor:
             infos = executor.map(process_single_scene, sample_id_list)
@@ -409,10 +408,11 @@ class KittiDataset(DatasetTemplate):
 
         # For each .bin file
         for k in range(len(infos)):
-            print('gt_database sample: %d/%d' % (k + 1, len(infos)))
+            print('gt_database sample: %d/%d' % (k+1, len(infos)))
+            
             info = infos[k]
             sample_idx = info['point_cloud']['lidar_idx']
-            print('  => contains cut-outs sample from: %s.bin' % sample_idx)
+            print('  => contains cut-outs sample from %s.bin' % sample_idx)
             points = self.get_lidar(sample_idx)
             annos = info['annos']
             names = annos['name']
@@ -449,6 +449,7 @@ class KittiDataset(DatasetTemplate):
 
         with open(db_info_save_path, 'wb') as f:
             pickle.dump(all_db_infos, f)
+            print('KittiDataset: kitti db info file is saved to %s' % db_info_save_path)
 
     @staticmethod
     def generate_prediction_dicts(batch_dict, pred_dicts, class_names, output_path=None):
@@ -541,12 +542,13 @@ class KittiDataset(DatasetTemplate):
 
     def __len__(self):
         if self._merge_all_iters_to_one_epoch:
-            return len(self.kitti_infos) * self.total_epochs and print('INFO: kitti infos: ',self.kitti_infos)
+            return len(self.kitti_infos) * self.total_epochs and self.logger.info('kitti infos: %s', self.kitti_infos)
 
         return len(self.kitti_infos)
 
     def __getitem__(self, index):
-        print('KittiDataset: __getitem__ called')
+        print('KittiDataset:  __getitem__ called')
+        
         # index = 4
         if self._merge_all_iters_to_one_epoch:
             index = index % len(self.kitti_infos)
@@ -555,7 +557,7 @@ class KittiDataset(DatasetTemplate):
         # without having a preconfigured training (missing some entries).
         #info = copy.deepcopy(self.kitti_infos[index])
         info = copy.deepcopy(self.dataset_w_all_infos[index])
-
+    
         sample_idx = info['point_cloud']['lidar_idx']
         img_shape = info['image']['image_shape'] 
         calib = self.get_calib(sample_idx) 
@@ -609,7 +611,7 @@ class KittiDataset(DatasetTemplate):
             input_dict["trans_lidar_to_cam"], input_dict["trans_cam_to_img"] = kitti_utils.calib_to_matricies(calib)
 
         input_dict['calib'] = calib
-
+        
         # change the parameter data_dict to data for working with several dicts instead of one
         # here the data_infos are changed
         data_list, applied_augmentors = self.prepare_data(data=input_dict) # jump to dataset.py
@@ -625,7 +627,7 @@ class KittiDataset(DatasetTemplate):
                 data_dict['rotation_y'] = annos['rotation_y']
                 data_dict['difficulty'] = annos['difficulty']
                 data_dict['image_shape'] = img_shape
-    
+
         return data_list, applied_augmentors
 
     # template from custom_dataset.py, maybe useful
