@@ -18,8 +18,22 @@ venv/
 *.png 
 bev_[0-9]*_[0-9]*.png
 bev_val_[0-9]*.txt
+*.json
 *.txt
 *.tar.gz
 *backup.yml
 output
 version.py
+
+# Ignoriere .txt-Dateien in den labels-Ordnern
+lidar2bev/bev_images/train/labels/bev_000000_1.txt
+lidar2bev/bev_images/train/labels/bev_000000_3.txt
+lidar2bev/bev_images/train/labels/bev_000000_4.txt
+lidar2bev/bev_images/train/labels/bev_000003_1.txt
+lidar2bev/bev_images/train/labels/bev_000003_3.txt
+lidar2bev/bev_images/train/labels/bev_000003_4.txt
+pcdet/visualizer.ipynb
+pcdet/RenderOption_2024-12-13-18-45-13.json 
+pcdet/ScreenCamera_all.json 
+pcdet/ScreenCamera_val.json
+pcdet/ScreenCamera_2024-12-13-18-45-14.json
