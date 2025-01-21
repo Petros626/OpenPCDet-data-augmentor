@@ -8,10 +8,16 @@ venv/
 *.idea/
 *.so
 *.yaml
+*.yml
+*.gz
 *.sh
 *.pth
 *.pkl
 *.zip
 *.bin
+*.png 
+bev_[0-9]*_[0-9]*.png
+bev_val_[0-9]*.txt
+*.txt
 output
 version.py
