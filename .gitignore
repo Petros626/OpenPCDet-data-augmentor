@@ -19,5 +19,7 @@ venv/
 bev_[0-9]*_[0-9]*.png
 bev_val_[0-9]*.txt
 *.txt
+*.tar.gz
+*backup.yml
 output
 version.py
