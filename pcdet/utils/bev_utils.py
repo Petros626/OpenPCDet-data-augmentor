@@ -1,11 +1,9 @@
 from functools import lru_cache
-from pickle import load
-from os import listdir
 from pathlib import Path
-from numpy import float32, fromfile, ndarray
-from typing import Union, List, Tuple
+from numpy import float32, ndarray, array
+from typing import Union, List, Tuple, DefaultDict
 from numpy.typing import NDArray
-from numba import jit
+from collections import defaultdict
 
 
 # ==============================================================================
@@ -13,6 +11,9 @@ from numba import jit
 # ==============================================================================
 @lru_cache(maxsize=None)
 def load_kitti_pointcloud(bin_path: str = None, pkl_path: str = None, sample_idx: int = 0, augment_idx: int = 0) -> Union[ndarray, List[ndarray]]:
+    from os import listdir
+    from numpy import float32, fromfile, load
+
     if bin_path:
         bin_path = Path(bin_path)
 
@@ -41,17 +42,22 @@ def load_kitti_pointcloud(bin_path: str = None, pkl_path: str = None, sample_idx
 
         if not pkl_path.is_file():
             raise FileNotFoundError(f".pkl file not found: {pkl_path}")
-        # Training data
-        with open(pkl_path, 'rb') as f:
-            data = load(f)
-                
-        try:
-            if isinstance(data, list):
-                num_samples = len(data)
+        
+        # Loading training entries (slow)
+        #with open(pkl_path, 'rb') as f:
+        #    data = load(f)
 
-            if 'frame_id' in str(data[sample_idx]): # train .pkl
+        # Loading training entries (faster)
+        data = load(pkl_path, allow_pickle=True)
+        num_samples = len(data)
+            
+        try:
+            #if isinstance(data, list): # old
+            # Access the sample at sample_idx
+            sample = data[sample_idx]
+
+            if 'frame_id' in str(sample): # train .pkl
                 # Train data for BEV
-                sample = data[sample_idx]
                 selected_data = sample[augment_idx]
                 point_cloud = selected_data['points']
                 curr_frame_id = selected_data['frame_id']
@@ -60,7 +66,7 @@ def load_kitti_pointcloud(bin_path: str = None, pkl_path: str = None, sample_idx
     
                 return point_cloud, gt_boxes, num_samples, curr_frame_id
             
-            elif 'point_cloud' in data[sample_idx]: # val .pkl
+            elif 'point_cloud' in sample: # val .pkl
                 # Val data for BEV
                 sample = data[sample_idx]
                 point_cloud = sample['points']
@@ -73,7 +79,7 @@ def load_kitti_pointcloud(bin_path: str = None, pkl_path: str = None, sample_idx
                 box_top = [bbox[1] for bbox in box2d] 
                 box_bottom = [bbox[3] for bbox in box2d]
                 heights = [float(bottom) - float(top) + 1 for top, bottom in zip(box_top, box_bottom)]
-                #print('heights: ', heights)
+
                 # Pack additional information for validation
                 val_info = {
                     'heights': heights,
@@ -87,6 +93,54 @@ def load_kitti_pointcloud(bin_path: str = None, pkl_path: str = None, sample_idx
             raise ValueError(f"Invalid sample_idx {sample_idx} or augment_idx {augment_idx} for .pkl dataset.")
     else:
         raise ValueError("Either bin_path or pkl_path must be provided.")
+
+# ==============================================================================
+# LOAD LAST PROCESSED SAMPLE
+# ==============================================================================
+@lru_cache(maxsize=None)
+def load_progress(progress_file: str) -> Tuple[int, int, DefaultDict[str, int]]:
+
+    if Path(progress_file).exists():
+        from json import load
+
+        with open(progress_file, "r") as f:
+            progress = load(f)
+            
+        frame_id_dict = defaultdict(int)
+        frame_id_dict.update(progress.get("processed_frames", {}))
+        
+        return (
+            progress.get("sample_idx", 0),
+            progress.get("augment_idx", 0),
+            frame_id_dict
+        )
+    return 0, 0, defaultdict(int)   
+
+# ==============================================================================
+# SAVE RECENT PROCESSED SAMPLE
+# ==============================================================================
+def save_progress(sample_idx: int, augment_idx: int, frame_id_dict: DefaultDict[str, int], progress_file: str) -> None:
+    from json import dump
+
+    progress = {
+        "sample_idx": sample_idx,
+        "augment_idx": augment_idx,
+        "processed_frames": dict(frame_id_dict)
+    }
+    with open(progress_file, "w") as f:
+        dump(progress, f, indent=2)
+
+# ==============================================================================
+# CREATES UNIQUE FRAME ID
+# ==============================================================================
+def get_unique_frame_id(frame_id: str, augment_idx: int, frame_id_dict: DefaultDict[str, int]) -> Tuple[str, DefaultDict[str, int]]:
+    needs_suffix = frame_id_dict[frame_id] > 0
+    base_id = f"{frame_id}_r" if needs_suffix else frame_id
+    
+    if augment_idx == 4:
+        frame_id_dict[frame_id] += 1
+        
+    return base_id, frame_id_dict
 
 # ==============================================================================
 # MAP HEIGHT (M) TO 255 (PX)
