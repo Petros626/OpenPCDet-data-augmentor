@@ -205,18 +205,55 @@ def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw: float, cls: int,
     x1, x2, x3, x4 = x3, x4, x1, x2
     y1, y2, y3, y4 = y3, y4, y1, y2
 
-    # Remove bev labels for objects outside the BEV image
-    # KITTI readme: "...to avoid false positives - detections not visible on the image plane should be filtered."
-    is_fully_visible = not (
-        (x1 < 0 or x1 >= bvcols) or
-        (x2 < 0 or x2 >= bvcols) or
-        (x3 < 0 or x3 >= bvcols) or
-        (x4 < 0 or x4 >= bvcols) or
-        (y1 < 0 or y1 >= bvrows) or
-        (y2 < 0 or y2 >= bvrows) or
-        (y3 < 0 or y3 >= bvrows) or
-        (y4 < 0 or y4 >= bvrows)
+    ############
+    # Option 1 #
+    ############
+    # The check whether at least one corner point is outside is removed.
+    # NOTE: KITTI readme: "...to avoid false positives - detections not visible on the image plane should be filtered."
+    # is_fully_visible = not (
+    #     (x1 < 0 or x1 >= bvcols) or
+    #     (x2 < 0 or x2 >= bvcols) or
+    #     (x3 < 0 or x3 >= bvcols) or
+    #     (x4 < 0 or x4 >= bvcols) or
+    #     (y1 < 0 or y1 >= bvrows) or
+    #     (y2 < 0 or y2 >= bvrows) or
+    #     (y3 < 0 or y3 >= bvrows) or
+    #     (y4 < 0 or y4 >= bvrows)
+    # )
+
+    ############
+    # Option 2 #
+    ############
+    # The check whether all corner points are outside is removed.
+    is_fully_outside = (
+        (x1 < 0 and x2 < 0 and x3 < 0 and x4 < 0) or  
+        (x1 >= bvcols and x2 >= bvcols and x3 >= bvcols and x4 >= bvcols) or 
+        (y1 < 0 and y2 < 0 and y3 < 0 and y4 < 0) or 
+        (y1 >= bvrows and y2 >= bvrows and y3 >= bvrows and y4 >= bvrows)  
     )
+
+    # Clipping of Bounding-Box Coordinates
+    x1 = max(0, min(x1, bvcols - 1))
+    y1 = max(0, min(y1, bvrows - 1))
+    x2 = max(0, min(x2, bvcols - 1))
+    y2 = max(0, min(y2, bvrows - 1))
+    x3 = max(0, min(x3, bvcols - 1))
+    y3 = max(0, min(y3, bvrows - 1))
+    x4 = max(0, min(x4, bvcols - 1))
+    y4 = max(0, min(y4, bvrows - 1))
+
+    # NOTE: Future implementation could be with clipping. When all corners of the box are outside the BEV image clip them.
+    # Remove objects outside the BEV image
+    # if x1 <= 0 and x2 <= 0 or \
+    #    x1 >= bvcols-1 and x2 >= bvcols-1 or \
+    #    y1 <= 0 and y2 <= 0 or \
+    #    y1 >= bvrows-1 and y2 >= bvrows-1:
+    #     return -1, -1, -1, -1  # Out of bounds
+    # # Clip boxes to the BEV image
+    # x1 = max(0, x1)
+    # y1 = max(0, y1)
+    # x2 = min(bvcols-1, x2)
+    # y2 = min(bvrows-1, y2)
     
     # Calculate ROI of box
     x_min = max(0, int(min(x1, x2, x3, x4)))
@@ -238,11 +275,19 @@ def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw: float, cls: int,
     if nonzero < 3:  # Detection is considered unreliable with fewer than 3 points
         return -1, -1, -1, -1, -1, -1, -1, -1, -1, box_colormap[int(0)], [0, 0]
 
-    if is_fully_visible: 
-        return cls, x1, y1, x2, y2, x3, y3, x4, y4, box_colormap[int(cls)], centroid # Return the coordinates of the four corners of the rotated bounding box in BEV image space
-    else:
+    # Option 1
+    #if is_fully_visible:
+        #return cls, x1, y1, x2, y2, x3, y3, x4, y4, box_colormap[int(cls)], centroid # Return the coordinates of the four corners of the rotated bounding box in BEV image space
+    #else:
         #return array([-1, -1, -1, -1]) # Indicates the box should not be drawn (out of bounds)
-        return -1, -1, -1, -1, -1, -1, -1, -1, -1, box_colormap[int(0)], [0, 0]
+        #return -1, -1, -1, -1, -1, -1, -1, -1, -1, box_colormap[int(0)], [0, 0]
+    
+    # Option 2
+    if is_fully_outside:
+        #return array([-1, -1, -1, -1]) # Indicates the box should not be drawn (out of bounds)
+        return -1, -1, -1, -1, -1, -1, -1, -1, -1, box_colormap[int(0)], [0, 0] 
+    else:
+        return cls, x1, y1, x2, y2, x3, y3, x4, y4, box_colormap[int(cls)], centroid
 
 
 
