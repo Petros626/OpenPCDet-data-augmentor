@@ -164,7 +164,7 @@ class KittiDataset(DatasetTemplate):
 
         if self.mode == 'test': # val mode
             from pcdet.datasets.processor.point_feature_encoder import PointFeatureEncoder
-            from pcdet.datasets.processor.data_processor import DataProcessor 
+            #from pcdet.datasets.processor.data_processor import DataProcessor 
 
             point_feature_encoder = PointFeatureEncoder(self.dataset_cfg.POINT_FEATURE_ENCODING, point_cloud_range=self.point_cloud_range)
 
