@@ -170,7 +170,7 @@ def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw: float, cls: int,
         l = l + 0.3
         w = w + 0.3
 
-    yaw = -yaw # Invert yaw from LiDAR frame to Image frame
+    yaw = -yaw # Invert yaw from LiDAR frame to Image frame, bc zero angle (0°) aligned differently in both systems
     
     # Calculate the initial coordinates of the object's four corners (relative to the centroid)
     corners = array([[centroid[0] - l/2., centroid[1] + w/2.], # Top-left
@@ -188,11 +188,11 @@ def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw: float, cls: int,
     R = array([[cos, -sin], [sin, cos]])
 
     # Rotate all corners around the centroid
-    rotated_corners = dot(corners-centroid, R) + centroid
+    rotated_corners = dot(corners - centroid, R) + centroid
 
     # Convert the world coordinates to BEV image coordinates
-    x1, x2, x3, x4 = bvcols / 2 + (-rotated_corners[:, 1]) / bev_res  # world y -> image x (u)
-    y1, y2, y3, y4 = bvrows - rotated_corners[:, 0] / bev_res         # world x -> image y (v)
+    x1, x2, x3, x4 = bvcols / 2 + (-rotated_corners[:, 1]) / bev_res  # lidar world y -> image x (u)
+    y1, y2, y3, y4 = bvrows - rotated_corners[:, 0] / bev_res         # lidar world x -> image y (v)
 
     # Now swap the corners to match YOLOv8 OBB format:
     """     Λ Default                Λ YOLOv8 OBB CW

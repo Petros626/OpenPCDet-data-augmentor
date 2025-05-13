@@ -74,7 +74,6 @@ def translate_boxes_to_open3d_instanceO3D(gt_boxes,  use_custom_diagonal_color=F
 
     line_set = open3d.geometry.LineSet.create_from_oriented_bounding_box(box3d)
 
-
     lines = np.asarray(line_set.lines)
     diagonal_lines = np.array([[1, 4], [7, 6]]) # creates diagonal cross in direction of the object
     lines = np.concatenate([lines, diagonal_lines], axis=0)

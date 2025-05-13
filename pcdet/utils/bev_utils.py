@@ -75,14 +75,11 @@ def load_kitti_pointcloud(bin_path: str = None, pkl_path: str = None, sample_idx
                 gt_boxes_lidar = sample['annos']['gt_boxes_lidar']
                 truncated = sample['annos']['truncated']
                 occluded = sample['annos']['occluded']
-                box2d = sample['annos']['bbox']
-                box_top = [bbox[1] for bbox in box2d] 
-                box_bottom = [bbox[3] for bbox in box2d]
-                heights = [float(bottom) - float(top) + 1 for top, bottom in zip(box_top, box_bottom)]
+                box_2d = sample['annos']['bbox']
 
                 # Pack additional information for validation
                 val_info = {
-                    'heights': heights,
+                    'bbox': box_2d,
                     'truncated': truncated,
                     'occluded': occluded
                 }
