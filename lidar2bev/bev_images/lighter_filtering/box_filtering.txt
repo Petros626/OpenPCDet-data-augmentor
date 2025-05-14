@@ -6,4 +6,4 @@ Currently in folder train/labels and val/labels are empty .txt files related to 
 I removed these empty labels with related images from the ultralytics specified dataset folders. 
 For the training data the slighter filtering method didn't bring more value (objects with more points). 
 On the positive side for the validation data it brought 6 more images, that can be validated. 
-The objects have more detail and are not directly at the edge of the image
+The objects have more detail and are not directly at the edge of the image.
