@@ -143,10 +143,10 @@ def draw_lbl_nl_score(bev_img: NDArray[uint8], class_name: str, conf_score: floa
 # ==============================================================================
 # DRAWS A ROTATED 2D-BOUNDING BOX ONTO A BEV IMAGE (BOX IN LiDAR FRAME REQUIRED)
 # ==============================================================================
-def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw: float, cls: int, bev_img: NDArray[uint8], bev_res: float = 0.1
+def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw_lidar: float, cls: int, bev_img: NDArray[uint8], bev_res: float = 0.1
                    ) -> Union[Tuple[float, float, float, float, float, float, float, float, List[int], List[float]], Tuple[int, int, int, int]]:
     """
-    source: https://github.com/AlejandroBarrera/birdnet2
+    source: https://github.com/AlejandroBarrera/birdnet2/blob/5ceed811b289796d7d7420a064ecb079c80801ab/tools/convert_kitti_to_coco_rotation.py#L73C10-L73C11
     other worthwhile sources: https://github.com/maudzung/Complex-YOLOv4-Pytorch/blob/master/src/data_process/kitti_bev_utils.py, 
     https://github.com/spmallick/learnopencv/blob/master/3D-LiDAR-Object-Detection/sfa/data_process/kitti_bev_utils.py#L87
     """
@@ -170,7 +170,7 @@ def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw: float, cls: int,
         l = l + 0.3
         w = w + 0.3
 
-    yaw = -yaw # Invert yaw from LiDAR frame to Image frame, bc zero angle (0°) aligned differently in both systems
+    yaw_bev = -yaw_lidar # Invert yaw from LiDAR frame (CW) to Image frame (CCW), bc zero angle (0°) aligned differently in both systems
     
     # Calculate the initial coordinates of the object's four corners (relative to the centroid)
     corners = array([[centroid[0] - l/2., centroid[1] + w/2.], # Top-left
@@ -179,7 +179,7 @@ def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw: float, cls: int,
                     [centroid[0] - l/2., centroid[1] - w/2.]]) # Bottom-left
 
     # Compute rotation matrix for yaw angle
-    cos, sin = np.cos(yaw), np.sin(yaw)
+    cos, sin = np.cos(yaw_bev), np.sin(yaw_bev)
     """
     2D-Rotation matrix
     [x'] = [cos(yaw) -sin(yaw)] * [x]
