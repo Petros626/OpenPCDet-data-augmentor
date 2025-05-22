@@ -30,8 +30,36 @@ class_names = {
 def draw_bbox_direction(bev_img: NDArray[uint8], bev_corners: NDArray[float32], color: Tuple[int, int, int] = (255, 255, 0), thickness: int = 2) -> None:
     corners_int = bev_corners.reshape(-1, 2).astype(int)
 
-    # Top-right (x1, y1) to Bottom-right (x2, y2) to Bottom-left (x3, y3) to Top-left (x4, y4)
+    # Draw from Top-left to Top-right for the object heading direction
     line(bev_img, (corners_int[3, 0], corners_int[3, 1]), (corners_int[0, 0], corners_int[0, 1]), color, thickness)
+
+# ==============================================================================
+# VISUALIZES BEV-BOX CORNER POINTS WITH COLOR CODING AND NUMBERING
+# ==============================================================================
+def draw_box_corners(bev_img, x1, y1, x2, y2, x3, y3, x4, y4):    
+    # Colors for the 4 box corners
+    colors = [
+        (255, 0, 0),    # Point 1: Red
+        (0, 255, 0),    # Point 2: Green
+        (0, 0, 255),    # Point 3: Blue
+        (255, 255, 0),  # Point 4: Yellow
+    ]
+    
+    points = [(int(x1), int(y1)), (int(x2), int(y2)), 
+              (int(x3), int(y3)), (int(x4), int(y4))]
+    
+    # Draw box corner with number
+    for i, (pt, color) in enumerate(zip(points, colors)):
+        circle(bev_img, pt, 5, color, -1)
+        putText(bev_img, str(i+1), (pt[0]+10, pt[1]+10), 
+                FONT_HERSHEY_DUPLEX, 0.7, color, 2, LINE_AA)
+    
+    for i in range(4):
+        line(bev_img, points[i], points[(i+1) % 4], (255, 255, 255), 1)
+    
+    line(bev_img, points[3], points[0], (255, 255, 0), 3)
+    
+    return bev_img
 
 # ==============================================================================
 # DRAWS AN ARROW FROM BEV-BOX CENTER
@@ -173,10 +201,11 @@ def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw_lidar: float, cls
     yaw_bev = -yaw_lidar # Invert yaw from LiDAR frame (CW) to Image frame (CCW), bc zero angle (0°) aligned differently in both systems
     
     # Calculate the initial coordinates of the object's four corners (relative to the centroid)
-    corners = array([[centroid[0] - l/2., centroid[1] + w/2.], # Top-left
-                    [centroid[0] + l/2., centroid[1] + w/2.], # Top-right
-                    [centroid[0] + l/2., centroid[1] - w/2.], # Bottom-right
-                    [centroid[0] - l/2., centroid[1] - w/2.]]) # Bottom-left
+    # In LiDAR frame the box corner points order is as follows
+    corners = array([[centroid[0] - l/2., centroid[1] + w/2.], # 1: Bottom-left
+                    [centroid[0] + l/2., centroid[1] + w/2.], # 2: Top-left
+                    [centroid[0] + l/2., centroid[1] - w/2.], # 3: Top-right
+                    [centroid[0] - l/2., centroid[1] - w/2.]]) # 4: Bottom-right
 
     # Compute rotation matrix for yaw angle
     cos, sin = np.cos(yaw_bev), np.sin(yaw_bev)
@@ -194,8 +223,8 @@ def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw_lidar: float, cls
     x1, x2, x3, x4 = bvcols / 2 + (-rotated_corners[:, 1]) / bev_res  # lidar world y -> image x (u)
     y1, y2, y3, y4 = bvrows - rotated_corners[:, 0] / bev_res         # lidar world x -> image y (v)
 
-    # Now swap the corners to match YOLOv8 OBB format:
-    """     Λ Default                Λ YOLOv8 OBB CW
+    # Now swap the corners from LiDAR to BEV for matching YOLOv8 OBB format:
+    """     Λ Default                Λ YOLOv8 OBB
     (x2,y2)---(x3,y3)        (x4,y4)---(x1,y1)
        |    |    |              |    |    |
        |    x    |      -->     |    x    |
@@ -264,11 +293,11 @@ def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw_lidar: float, cls
     # Remove objects with fewer than 3 points in the box
     roi = bev_img[y_min:y_max, x_min:x_max]
     """
-    (x1,y1)------(x2,y1)
-    |              |
-    |      ROI     |
-    |              |
-    (x1,y2)------(x2,y2)
+    (x_min,y_min)------(x_max,y_min)
+          |                  |
+          |       ROI        |
+          |                  |
+    (x_min,y_max)------(x_max,y_max)
     """
     nonzero = count_nonzero(sum(roi, axis=2))
 
