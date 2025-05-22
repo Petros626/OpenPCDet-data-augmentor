@@ -571,7 +571,7 @@ class KittiDataset(DatasetTemplate):
         if 'annos' in info:
             annos = info['annos']
             annos = common_utils.drop_info_with_name(annos, name='DontCare')
-            # x, y, z, h, w, l, ry
+            # loc=x, y, z, dims=h, w, l, rots=ry
             loc, dims, rots = annos['location'], annos['dimensions'], annos['rotation_y']
             gt_names = annos['name']
             # x, y, z, h, w, l, ry
