@@ -1,8 +1,9 @@
 
 
-# OpenPCDet: modified as data augmentor to generate BEV images with labels from LiDAR data.
+# OpenPCDet: Modified KITTIDataset class as data augmentor to generate BEV images with labels from LiDAR data.
 
-Add description here how to create the data and generate the images with labels
+For my project work I used the KITTIDataset class to create KITTIDatasetCustom. This makes it possible to save the dataset with augmentations and use them for other purposes.
+The number of augmentations can be chosen at will. Further information can be found here [DATA_AUGMENTOR_TUTORIAL.md](docs/DATA_AUGMENTOR_TUTORIAL.md).
 
 <img src="docs/open_mmlab.png" align="right" width="30%">
 
@@ -25,6 +26,7 @@ It is also the official code release of [`[PointRCNN]`](https://arxiv.org/abs/18
 - [Installation](docs/INSTALL.md)
 - [Quick Demo](docs/DEMO.md)
 - [Getting Started](docs/GETTING_STARTED.md)
+- [Data Augmentation](docs/DATA_AUGMENTOR_TUTORIAL.md)
 - [Citation](#citation)
 
 
