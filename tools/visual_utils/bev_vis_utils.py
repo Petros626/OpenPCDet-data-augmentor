@@ -57,7 +57,7 @@ def draw_box_corners(bev_img, x1, y1, x2, y2, x3, y3, x4, y4):
     for i in range(4):
         line(bev_img, points[i], points[(i+1) % 4], (255, 255, 255), 1)
     
-    line(bev_img, points[3], points[0], (255, 255, 0), 3)
+    #line(bev_img, points[3], points[0], (255, 255, 0), 3)
     
     return bev_img
 
@@ -206,11 +206,26 @@ def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw_lidar: float, cls
                     [centroid[0] + l/2., centroid[1] + w/2.], # 2: Top-left
                     [centroid[0] + l/2., centroid[1] - w/2.], # 3: Top-right
                     [centroid[0] - l/2., centroid[1] - w/2.]]) # 4: Bottom-right
+    # TODO: change the box corner order to this definition:
+    # source: https://mmrotate.readthedocs.io/en/latest/intro.html
+    """
+    Schematic of CW
+    0-------------------> x (0 rad)
+    |  A-------------B
+    |  |             |
+    |  |     box     h
+    |  |   angle=0   |
+    |  D------w------C
+    v
+    y (pi/2 rad)
+
+    """
 
     # Compute rotation matrix for yaw angle
     cos, sin = np.cos(yaw_bev), np.sin(yaw_bev)
+
     """
-    2D-Rotation matrix
+    2D-Rotation matrix of CW
     [x'] = [cos(yaw) -sin(yaw)] * [x]
     [y']   [sin(yaw)  cos(yaw)]   [y]
     """
@@ -220,11 +235,13 @@ def get_rot_bevbox(x: float, y: float, l: float, w: float, yaw_lidar: float, cls
     rotated_corners = dot(corners - centroid, R) + centroid
 
     # Convert the world coordinates to BEV image coordinates
-    x1, x2, x3, x4 = bvcols / 2 + (-rotated_corners[:, 1]) / bev_res  # lidar world y -> image x (u)
+    x1, x2, x3, x4 = bvcols / 2 + (-rotated_corners[:, 1]) / bev_res  # lidar world -y -> image x (u)
     y1, y2, y3, y4 = bvrows - rotated_corners[:, 0] / bev_res         # lidar world x -> image y (v)
 
     # Now swap the corners from LiDAR to BEV for matching YOLOv8 OBB format:
-    """     Λ Default                Λ YOLOv8 OBB
+    """ 
+    Schematic of my definition
+            Λ Default                Λ YOLOv8 OBB
     (x2,y2)---(x3,y3)        (x4,y4)---(x1,y1)
        |    |    |              |    |    |
        |    x    |      -->     |    x    |

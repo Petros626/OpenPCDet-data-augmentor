@@ -6,10 +6,13 @@ All rights preserved from 2021 - present.
 """
 import open3d
 import open3d.visualization
-import open3d.ml
 import torch
 import matplotlib
 import numpy as np
+import PIL
+
+from PIL import Image, ImageFont, ImageDraw
+from pyquaternion import Quaternion
 
 box_colormap = [
     [1, 1, 1], # not assigned
@@ -54,7 +57,7 @@ def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scor
 
     # draw origin
     if draw_origin:
-        axis_pcd = open3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
+        axis_pcd = open3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0]) # z: -1.73m for KITTI
         vis.add_geometry(axis_pcd)
 
     pts = open3d.geometry.PointCloud()
@@ -67,7 +70,7 @@ def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scor
         pts.colors = open3d.utility.Vector3dVector(point_colors)
 
     if gt_boxes is not None:
-        vis = draw_box(vis, gt_boxes, (0, 0, 1)) # default blue
+        vis = draw_box(vis, gt_boxes, (0, 0, 1), ref_labels=None, score=1) # default blue
 
     if ref_boxes is not None:
         vis = draw_box(vis, ref_boxes, (0, 1, 0), ref_labels, ref_scores)
@@ -75,7 +78,7 @@ def draw_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scor
     vis.run()
     vis.destroy_window()
 
-def draw_demo_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref_scores=None, point_colors=None, draw_origin=True, vc=None, use_custom_diagonal_color=False):
+def draw_demo_scenes(points, gt_boxes=None, gt_labels=None, gt_score=None, ref_boxes=None, ref_labels=None, ref_scores=None, point_colors=None, draw_origin=True, vc=None):
     if isinstance(points, torch.Tensor):
         points = points.cpu().numpy()
     if isinstance(gt_boxes, torch.Tensor):
@@ -104,7 +107,7 @@ def draw_demo_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref
         pts.colors = open3d.utility.Vector3dVector(point_colors)
 
     if gt_boxes is not None:
-        vis = draw_demo_box(vis, gt_boxes, keypoint_color=(0, 0, 1)) 
+        vis = draw_demo_box(vis, gt_boxes, gt_labels, gt_score, keypoint_color=(0, 0, 1)) 
 
     view_control = vis.get_view_control()
 
@@ -121,15 +124,15 @@ def draw_demo_scenes(points, gt_boxes=None, ref_boxes=None, ref_labels=None, ref
     return vis
 
 
-def translate_boxes_to_open3d_instance(gt_boxes,  use_custom_diagonal_color=False):
+def translate_boxes_to_open3d_instance(gt_boxes, class_idx=None):
     """
-             4-------- 6
-           /|         /|
-          5 -------- 3 .
-          | |        | |
-          . 7 -------- 1
-          |/         |/
-          2 -------- 0
+        4-------- 6
+      /|         /|
+     5 -------- 3 .
+     | |        | |
+     . 7 -------- 1
+     |/         |/
+     2 -------- 0
     """
     center = gt_boxes[0:3]
     lwh = gt_boxes[3:6]
@@ -139,18 +142,17 @@ def translate_boxes_to_open3d_instance(gt_boxes,  use_custom_diagonal_color=Fals
 
     line_set = open3d.geometry.LineSet.create_from_oriented_bounding_box(box3d)
 
-
+    #import ipdb; ipdb.set_trace() # python only
     lines = np.asarray(line_set.lines)
+
     diagonal_lines = np.array([[1, 4], [7, 6]]) # creates diagonal cross in direction of the object
+  
     lines = np.concatenate([lines, diagonal_lines], axis=0)
     line_set.lines = open3d.utility.Vector2iVector(lines) # 3D-BBox lines
     
-    class_idx = int(gt_boxes[7])
     bbox_color = box_colormap[class_idx]
     line_colors = np.full((len(lines), 3), bbox_color)  # Red for the box
-    # heading diagonal
-    if use_custom_diagonal_color:
-        line_colors[-2:] = [0, 1, 0]  # Green for the diagonal
+
     line_set.colors = open3d.utility.Vector3dVector(line_colors)
 
     # the middle of the diagonal showing in object direction
@@ -173,6 +175,54 @@ def translate_boxes_to_open3d_instance(gt_boxes,  use_custom_diagonal_color=Fals
 
     return line_set, box3d, middle_diagonal
 
+def draw_demo_box(vis, gt_boxes, gt_labels, gt_score=None, ref_labels=None, keypoint_color=(0, 0, 1)):
+    name_to_idx = {'Car': 1, 'Pedestrian': 2, 'Cyclist': 3}
+
+    for i in range(gt_boxes.shape[0]):
+        label = gt_labels[i]
+        if isinstance(label, str):
+            class_idx = name_to_idx.get(label, 1)
+        else:
+            class_idx = int(label)
+
+        line_set, box3d, middle_diagonal = translate_boxes_to_open3d_instance(gt_boxes[i], class_idx)
+        vis.add_geometry(line_set)
+
+        if gt_score is not None:
+            corners = box3d.get_box_points()
+            # If score array is too short, use -1 for missing values
+            if i < len(gt_score):
+                score = gt_score[i]
+            else:
+                score = -1 # padding of missing score values
+                
+            if score == -1:
+                vis.add_geometry(text_3d("GT", corners[3]))
+            else:
+                vis.add_geometry(text_3d(f"{score[i]:.0f}", corners[3]))
+
+        #if gt_labels is not None:
+        #    line_set.paint_uniform_color(color)
+        #else:
+        #    line_set.paint_uniform_color(box_colormap[ref_labels[i]])
+        # already colored lines
+
+        #bbox_color = box_colormap[class_idx]
+        #arrow_color = bbox_color
+        
+        # Add object keypoint
+        #center = gt_boxes[i, :3]
+        #size = gt_boxes[i, 3:6]
+        #keypoint = create_bbox_keypoint(class_idx, center, size, color=keypoint_color)
+        #vis.add_geometry(keypoint)
+
+        # Add object arrow
+        #heading = gt_boxes[i, 6]
+        #arrow = create_bbox_arrow(class_idx, middle_diagonal, heading, cylinder_r=0.090, cone_r=0.270, cylinder_h=1.4, cone_h=0.2, color=arrow_color)
+        #vis.add_geometry(arrow)
+
+    return vis
+
 def draw_box(vis, gt_boxes, color=(0, 1, 0), ref_labels=None, score=None):
     for i in range(gt_boxes.shape[0]):
         line_set, box3d, _ = translate_boxes_to_open3d_instance(gt_boxes[i])
@@ -183,10 +233,61 @@ def draw_box(vis, gt_boxes, color=(0, 1, 0), ref_labels=None, score=None):
 
         vis.add_geometry(line_set)
 
-        #if score is not None:
-        #     corners = box3d.get_box_points()
-        #     vis.add_3d_label(corners[5], '%.2f' % score[i])
+        if score is not None:
+            corners = box3d.get_box_points()
+            vis.add_geometry(text_3d(str(np.round(score[i], 4)),corners[3]))
     return vis
+
+def text_3d(text, pos, direction=None, degree=0.0, font='/usr/share/fonts/truetype/freefont/FreeMono.ttf', font_size=1000, density=10):
+    """
+    Generate a 3D text point cloud used for visualization.
+    :param text: content of the text
+    :param pos: 3D xyz position of the text upper left corner
+    :param direction: 3D normalized direction of where the text faces
+    :param degree: in plane rotation of text
+    :param font: Name of the font - change it according to your system
+    :param font_size: size of the font
+    :return: o3d.geoemtry.PointCloud object
+    """
+    if direction is None:
+        direction = (1., 0., 0.)
+
+    font_obj = ImageFont.truetype(font, font_size)
+    pl_version = tuple(map(int, PIL.__version__.split(".")))
+
+    if pl_version >= (9,2,0):
+        left, top, right, bottom = font_obj.getbbox(text)
+        tw, th = right - left, bottom - top
+        text_offset = (-left, -top)
+    else:
+        tw, th = font_obj.getsize(text)
+        text_offset = (0, 0)
+
+    font_dim = (tw, th)
+
+    img = Image.new('RGB', font_dim, color=(255, 255, 255))
+    draw = ImageDraw.Draw(img)
+
+    draw.text(text_offset, text, font=font_obj, fill=(0, 0, 0))
+    img = np.asarray(img)
+    img_mask = img[:, :, 0] < 128
+    indices = np.indices([*img.shape[0:2], 1])[:, img_mask, 0].reshape(3, -1).T
+
+    pcd = open3d.geometry.PointCloud()
+    pcd.colors = open3d.utility.Vector3dVector(np.ones((indices.shape[0], 3)))  # White label
+    pcd.points = open3d.utility.Vector3dVector(indices / 1000) # label size
+
+    raxis = np.cross([0.0, 0.0, 1.0], direction)
+    if np.linalg.norm(raxis) < 1e-6:
+        raxis = (0.0, 0.0, 1.0)
+    
+    quaternion_z = Quaternion(axis=[0, 0, 1], angle=np.pi)
+    trans = (quaternion_z * Quaternion(axis=raxis, radians=np.arccos(direction[2])) *
+             Quaternion(axis=direction, degrees=degree)).transformation_matrix
+    trans[0:3, 3] = np.asarray(pos)
+    pcd.transform(trans)
+    
+    return pcd
 
 def create_bbox_keypoint(class_idx, center, size, color=None):
     """Create a sphere at the top of the bounding box."""
@@ -219,96 +320,5 @@ def create_bbox_arrow(class_idx, position, direction, cylinder_r=None, cone_r=No
     arrow.paint_uniform_color(color)
     return arrow
 
-# def create_bbox_label(scale=0.1, density=2000, offset=(0, 0, 0.1)):
-#     t = np.linspace(0, 2 * np.pi, density)
-#     x = 0.25 * np.cos(t) * scale 
-#     y = np.sin(t) * scale  
-#     z = np.zeros_like(t)
 
-#     points_label = np.column_stack((x, y, z))
-#     return points_label
 
-def text_3d(text, pos, direction=None, degree=0.0, density=None, font='/usr/share/fonts/truetype/freefont/FreeMono.ttf', font_size=None):
-    """Create a 3d text label"""
-    if direction is None:
-        direction = (0., 0., 1.) # default positioned to z-axis
-        
-    from PIL import Image, ImageFont, ImageDraw
-    from pyquaternion import Quaternion
-
-    font_obj = ImageFont.truetype(font, font_size * density)
-    left, top, right, bottom = font_obj.getbbox(text)
-    width = right - left
-    height = bottom - top
-    font_dim = (width, height)
-
-    img = Image.new('1', font_dim, color=1)
-    draw = ImageDraw.Draw(img)
-    draw.text((-left, -top), text, font=font_obj, fill=0)  # Draw black text (fill=0 for black)
-    img = np.asarray(img)
-
-    img_mask = img == 0  # Only the black pixels (text) will be considered
-    indices = np.indices([*img.shape[0:2], 1])[:, img_mask, 0].reshape(3, -1).T
-    pcd = open3d.geometry.PointCloud()
-    pcd.colors = open3d.utility.Vector3dVector(np.ones((indices.shape[0], 3)) * np.array([1, 0, 0])) 
-    pcd.points = open3d.utility.Vector3dVector(indices / (1000 * density))
-
-    raxis = np.cross([0.0, 0.0, 1.0], direction)
-    if np.linalg.norm(raxis) < 1e-6:
-        raxis = (0.0, 0.0, 1.0)
-    
-    # Apply rotation and translation using quaternion
-    trans = (Quaternion(axis=raxis, radians=np.arccos(direction[2])) *
-             Quaternion(axis=direction, degrees=degree)).transformation_matrix
-    trans[0:3, 3] = np.asarray(pos)  # Translate to the specified position
-    pcd.transform(trans)
-
-    return pcd
-
-def create_bbox_label(text, pos):
-    label_pcd = text_3d(text, pos, font_size=100, density=20)
-    return label_pcd
-
-def draw_demo_box(vis, gt_boxes, ref_labels=None, keypoint_color=(0, 0, 1)):
-    
-    for i in range(gt_boxes.shape[0]):
-        line_set, box3d, middle_diagonal = translate_boxes_to_open3d_instance(gt_boxes[i], use_custom_diagonal_color=False)
-
-        # Draw 3D BBox lines
-        vis.add_geometry(line_set)
-
-        #if gt_labels is not None:
-        #    line_set.paint_uniform_color(color)
-        #else:
-        #    line_set.paint_uniform_color(box_colormap[ref_labels[i]])
-        # already colored lines
-
-        class_idx = int(gt_boxes[i, 7])
-        bbox_color = box_colormap[class_idx]
-        arrow_color = bbox_color
-        
-        # Add object keypoint
-        center = gt_boxes[i, :3]
-        size = gt_boxes[i, 3:6]
-        keypoint = create_bbox_keypoint(class_idx, center, size, color=keypoint_color)
-        vis.add_geometry(keypoint)
-
-        # Add object arrow
-        heading = gt_boxes[i, 6]
-        arrow = create_bbox_arrow(class_idx, middle_diagonal, heading, cylinder_r=0.090, cone_r=0.270, cylinder_h=1.4, cone_h=0.2, color=arrow_color)
-        vis.add_geometry(arrow)
-
-        # Add object label
-        #box_corner_points = box3d.get_box_points()
-        #label_origin = box_corner_points[4] + 0.1
-        #text = '1'
-        #label = create_bbox_label(text, pos=label_origin)
-        #vis.add_geometry(label)
-
-        # label_points = create_bbox_label(scale=0.1, density=1000) + label_origin
-        # label_pcd = open3d.geometry.PointCloud()
-        # label_pcd.points = open3d.utility.Vector3dVector(label_points)
-        # label_pcd.paint_uniform_color([0, 1, 0])
-        # vis.add_geometry(label_pcd)
-
-    return vis
