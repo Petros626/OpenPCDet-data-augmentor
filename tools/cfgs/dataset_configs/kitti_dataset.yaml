@@ -1,25 +1,8 @@
 DATASET: 'KittiDataset'
 DATA_PATH: '../data/kitti'
-###############################################
-# This file is configured to a research paper,#
-# normally custom_dataset.yaml "can" be used. #
-###############################################
 
-#########################
-# Point Cloud Range Law #
-#########################
-# For !VOXEL BASED! detectors only such as SECOND, PV-RCNN and CenterPoint.
-# Law: point cloud range along z-axis / voxel_size is 40.
-# Example:
-# 1.27 - (-2.73) = 4.0
-# 4.0 / 0.1 = 40
+POINT_CLOUD_RANGE: [0, -40, -3, 70.4, 40, 1]
 
-# POINT_CLOUD_RANGE: [x_min, y_min, z_min, x_max, y_max, z_max].
-# BEVDetNet paper: x(0, 60), y(-30, 30), z(-2.73, 1.27).
-# KITTI paper: x(0, 69.12), y(-39.68, 39.68), z(-3, 1)
-POINT_CLOUD_RANGE: [0, -30, -2.73, 60, 30, 1.27]
-
-# OpenPCDet only evaluates on the val set. The BEVDetNet paper implementation does also, so no need to change here something.
 DATA_SPLIT: {
     'train': train,
     'test': val
@@ -30,61 +13,37 @@ INFO_PATH: {
     'test': [kitti_infos_val.pkl],
 }
 
-# Load only the point cloud from data
 GET_ITEM_LIST: ["points"]
-# Load only points in the Field of View. BEVDetnet takes from BirdNet*: "keep only those points in the field of view of the camera, 
-# where annotations are available."
-# KITTI paper: "As only objects also appearing on the image plane are labeled, 
-# objects in don't care areas do not count as false positives. We note that the  evaluation does not take care of ignoring 
-# detections that are not visible on the image plane — these detections might give rise to false positives."
 FOV_POINTS_ONLY: True
 
-# Using the road plane increases the mAP experienced by different users from "issues". 
-# Road planes help to create the samples in folder gt_database better, than the default algorithm.
 DATA_AUGMENTOR:
     DISABLE_AUG_LIST: ['placeholder']
     AUG_CONFIG_LIST:
-        - NAME: gt_sampling 
+        - NAME: gt_sampling
           USE_ROAD_PLANE: True
           DB_INFO_PATH:
               - kitti_dbinfos_train.pkl
-          # Specify which GT objects (Car, Pedestrian or Cyclist) are sampled based on the minimum number of points.
           PREPARE: {
              filter_by_min_points: ['Car:5', 'Pedestrian:5', 'Cyclist:5'],
-             filter_by_difficulty: [-1], # 0 only Easy samples , 1 only Moderate sample, only 2 Hard samples, -1 all of them.
+             filter_by_difficulty: [-1],
           }
-
-          # How many objects of each class (e.g. Car, Pedestrian, Cyclist) should be added to a scene using the gt_sampling method.
+          
           SAMPLE_GROUPS: ['Car:20','Pedestrian:15', 'Cyclist:15']
-          # 4 features (x, y, z and intensity) are used for each point in the point cloud.
           NUM_POINT_FEATURES: 4
           DATABASE_WITH_FAKELIDAR: False
-          # Leaves the bounding boxes of the ground truth objects unchanged.
           REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
-          # Sampled objects are distributed evenly across the entire scene to ensure a balanced data distribution.
           LIMIT_WHOLE_SCENE: True
-          # Does not make sense to flip on the y-axis when on the other side, there are no targets to train for.
-          # BEVDetNet paper: horizontal flips (x-axis).
+
         - NAME: random_world_flip
           ALONG_AXIS_LIST: ['x']
-          # BEVDetNet paper: global rotation in the range (-5°, 5°).
+
         - NAME: random_world_rotation
-          WORLD_ROT_ANGLE: [-0.0872664626, 0.0872664626] # radiant
-          # Quantifying Data Augmentation paper: local rotation (-9°, 9°). Small angles are difficult to recognize in the BEV
-        - NAME: random_local_rotation
-          LOCAL_ROT_ANGLE: [-0.15707963267, 0.15707963267] # radiant
+          WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
 
-        # NOTE: was just for test purposes.
-        #- NAME: random_local_rotation_v2
-        #  LOCAL_ROT_ANGLE: [-0.15707963267, 0.15707963267] # radiant
-          # BEVDetNet paper: not mentioned, but author confirmed it, the accuracy of the model didn't increase that much!
-        # - NAME: random_local_translation
-        #   LOCAL_TRANSLATION_RANGE: [0, 0.25]
-        #   ALONG_AXIS_LIST: ['x','y','z']
-          
-        
+        - NAME: random_world_scaling
+          WORLD_SCALE_RANGE: [0.95, 1.05]
 
-# Make sure your points from raw data to the final dict are encoded correctly.
+
 POINT_FEATURE_ENCODING: {
     encoding_type: absolute_coordinates_encoding,
     used_feature_list: ['x', 'y', 'z', 'intensity'],
@@ -94,30 +53,18 @@ POINT_FEATURE_ENCODING: {
 
 DATA_PROCESSOR:
     - NAME: mask_points_and_boxes_outside_range
-      REMOVE_OUTSIDE_BOXES: True # keep only relevant points and objects.
+      REMOVE_OUTSIDE_BOXES: True
 
-    - NAME: shuffle_points 
+    - NAME: shuffle_points
       SHUFFLE_ENABLED: {
         'train': True,
         'test': False
       }
 
-    ##################  
-    # Voxel size Law #
-    ##################
-    # For voxel based detectors such as SECOND, PV-RCNN and CenterPoint.
-    # Law: point cloud range along x,y -axis / voxel_size is the multiple of 16.
-    # range_x = x_max - x_min ; range_x / voxel_size mod 16 = 0
-    # Notice that the second rule also suit pillar based detectors such as PointPillar and CenterPoint-Pillar.
-    # Example:
-    # x = [0, 70.4] ; y = [-40, 40]
-    # x-axis: 70.4 - 0 = 70.4 / 0.1 = 704 mod 16 = 0
-    # y-axis: 40 - (-40) = 80 / 0.1 = 800 mod 16 = 0
-    # - NAME: transform_points_to_voxels
-    #   VOXEL_SIZE: [0.05, 0.05, 0.1] # VOXEL [length, width, height]  0.05m = 5 cm
-    #   MAX_POINTS_PER_VOXEL: 5
-    #   MAX_NUMBER_OF_VOXELS: {
-    #     'train': 16000, # voxel_counter_cuda.py (unprecise, maybe bug), voxel_counter_jit.py (precise, no bug).
-    #     'test': 40000
-    #   }
-      
+    - NAME: transform_points_to_voxels
+      VOXEL_SIZE: [0.05, 0.05, 0.1]
+      MAX_POINTS_PER_VOXEL: 5
+      MAX_NUMBER_OF_VOXELS: {
+        'train': 16000,
+        'test': 40000
+      }
