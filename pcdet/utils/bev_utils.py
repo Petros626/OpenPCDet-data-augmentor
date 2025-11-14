@@ -222,7 +222,8 @@ def map_rc2pc(x: float, y: float, row: int, column: int, IMAGE_HEIGHT: int, IMAG
 def normalize_coordinates(x1: float, y1: float, x2: float, y2: float, x3: float, y3: float, x4: float, y4: float, img_width: int, img_height: int
                           ) -> Tuple[float, float, float, float, float, float, float, float]:
     """
-    x_n = x / image_width, y_n = y / image_height
+    x_n = x / image_width
+    y_n = y / image_height
     """
     x1 /= img_width
     x2 /= img_width
