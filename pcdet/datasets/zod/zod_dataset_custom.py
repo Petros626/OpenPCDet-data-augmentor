@@ -45,7 +45,6 @@ class ZODDatasetCustom(DatasetTemplate):
                 self.logger.info(f'ImageSets already exist in {imagesets_dir.resolve()}')
 
         split_dir = self.root_path / 'ImageSets' / (self.split + '_' + self.version + '.txt') # ZOD
-        
         self.sample_id_list = [x.strip() for x in open(split_dir).readlines()] if split_dir.exists() else None
     
         self.dataset_w_all_infos = [] # new list for custom augmented training dataset
@@ -58,9 +57,15 @@ class ZODDatasetCustom(DatasetTemplate):
 
     def create_ImageSets_from_zodtrainval(self, zod_frames, imagesets_dir, version='full', only_split=None):
         from pathlib import Path
-        import random
 
-        faulty_train_frames = ['069293', '058043', '014942', '057435', '062628', '097451', '027256', '001554']
+        # keep it updated, when you encounter:
+        # FileNotFoundError: [Errno 2] No such file or directory: '/home/rlab10/OpenPCDet/data/zod/single_frames/024391/lidar_velodyne/024391_golf_2021-10-11T11:25:02.972379Z.npy'
+        faulty_train_frames = ['069293', '058043', '014942', '057435', '062628', '097451', '027256', '001554', '024391',
+                               '046291', '053347', '028927','056545', '009608', '061077', '054192', '056158', '008896',
+                               '020452', '009277', '057300', '090283', '012439', '006494', '082269', '024304', '044369',
+                               '070476', '026378', '004782', '028087', '063518', '057144', '030924', '002639', '062073',
+                               '056269', '005912', '052151', '049713', '052528', '016020', '003027', '059396', '052749',
+                               '000410']
 
         train_id_list = list(zod_frames.get_split(constants.TRAIN))
         train_id_list = [s for s in train_id_list if not any(exclude_frames in s for exclude_frames in faulty_train_frames)]
@@ -90,7 +95,7 @@ class ZODDatasetCustom(DatasetTemplate):
             info_path = self.root_path / info_path
             if not info_path.exists():
                 continue
-            # Read the data infos from zod_infos_train.pkl
+            # Read the data infos from zod_infos_train_full.pkl
             with open(info_path, 'rb') as f:
                 infos = pickle.load(f)
                 zod_infos.extend(infos)
@@ -100,63 +105,58 @@ class ZODDatasetCustom(DatasetTemplate):
             self.logger.info('Total samples for ZOD dataset: %d' % (len(zod_infos)))
         
         if not self.creating_pkl_infos:
-            print("gehe in map_merged_classes")
             self. map_merged_classes()
         
     def map_merged_classes(self):
         if self.dataset_cfg.get('MAP_MERGED_CLASSES', None) is None:
-            print("Exit map_merged_classes")
             return
         
         #update class names in zod_infos
         map_merge_class = self.dataset_cfg.MAP_MERGED_CLASSES
-        print("Enter map_merged_classes")
         for info in self.zod_infos:
-            print("inside loop")
             assert 'annos' in info
-            print("replace Classes")
             info['annos']['name'] = np.vectorize(lambda name: map_merge_class[name], otypes=[str])(info['annos']['name'])
             
-    def set_split_sleep(self, split, version):
-        import random
+    # def set_split_sleep(self, split, version):
+    #     import random
 
-        super().__init__(
-            dataset_cfg=self.dataset_cfg, class_names=self.class_names, training=self.training, root_path=self.root_path, logger=self.logger
-        )
-        self.split = split
-        self.version = version
+    #     super().__init__(
+    #         dataset_cfg=self.dataset_cfg, class_names=self.class_names, training=self.training, root_path=self.root_path, logger=self.logger
+    #     )
+    #     self.split = split
+    #     self.version = version
 
-        split_dir = self.root_path / 'ImageSets' / (self.split + '_' + self.version + '.txt')
-        all_ids = [x.strip() for x in open(split_dir).readlines()] if split_dir.exists() else None
+    #     split_dir = self.root_path / 'ImageSets' / (self.split + '_' + self.version + '.txt')
+    #     all_ids = [x.strip() for x in open(split_dir).readlines()] if split_dir.exists() else None
 
-        if self.countries and len(self.countries) > 0:
-            self.sample_id_list = [x for x in all_ids if self.zod_frames[x].metadata.country_code in self.countries]
+    #     if self.countries and len(self.countries) > 0:
+    #         self.sample_id_list = [x for x in all_ids if self.zod_frames[x].metadata.country_code in self.countries]
 
-            if split == 'train' and not self.dataset_cfg.SPLIT_CONFIG.USE_ORIGINAL_SPLIT:
-                train_size = self.dataset_cfg.SPLIT_CONFIG.TRAIN_SIZE
-                random_seed = self.dataset_cfg.SPLIT_CONFIG.RANDOM_SEED
-                random.seed(random_seed)
-                if len(self.sample_id_list) > train_size:
-                    self.sample_id_list = random.sample(self.sample_id_list, train_size)
+    #         if split == 'train' and not self.dataset_cfg.SPLIT_CONFIG.USE_ORIGINAL_SPLIT:
+    #             train_size = self.dataset_cfg.SPLIT_CONFIG.TRAIN_SIZE
+    #             random_seed = self.dataset_cfg.SPLIT_CONFIG.RANDOM_SEED
+    #             random.seed(random_seed)
+    #             if len(self.sample_id_list) > train_size:
+    #                 self.sample_id_list = random.sample(self.sample_id_list, train_size)
             
-            if split == 'val' and not self.dataset_cfg.SPLIT_CONFIG.USE_ORIGINAL_SPLIT:
-                val_size = self.dataset_cfg.SPLIT_CONFIG.VAL_SIZE
-                random_seed = self.dataset_cfg.SPLIT_CONFIG.RANDOM_SEED
-                random.seed(random_seed)
-                if len(self.sample_id_list) < val_size:
-                    train_split_dir = self.root_path / 'ImageSets' / ('train_' + self.version + '.txt')
-                    train_ids = [x.strip() for x in open(train_split_dir).readlines()] if train_split_dir.exists() else []
-                    train_ids_unique = [x for x in train_ids if x not in self.sample_id_list]
-                    missing = val_size - len(self.sample_id_list)
-                    extra_val_ids = random.sample(train_ids_unique, missing)
-                    self.sample_id_list += extra_val_ids
+    #         if split == 'val' and not self.dataset_cfg.SPLIT_CONFIG.USE_ORIGINAL_SPLIT:
+    #             val_size = self.dataset_cfg.SPLIT_CONFIG.VAL_SIZE
+    #             random_seed = self.dataset_cfg.SPLIT_CONFIG.RANDOM_SEED
+    #             random.seed(random_seed)
+    #             if len(self.sample_id_list) < val_size:
+    #                 train_split_dir = self.root_path / 'ImageSets' / ('train_' + self.version + '.txt')
+    #                 train_ids = [x.strip() for x in open(train_split_dir).readlines()] if train_split_dir.exists() else []
+    #                 train_ids_unique = [x for x in train_ids if x not in self.sample_id_list]
+    #                 missing = val_size - len(self.sample_id_list)
+    #                 extra_val_ids = random.sample(train_ids_unique, missing)
+    #                 self.sample_id_list += extra_val_ids
 
-            if self.logger is not None:
-                self.logger.info(f"{len(self.sample_id_list)} samples for {self.countries} in split {self.split}")
-        else:
-            self.sample_id_list = all_ids
-            if self.logger is not None:
-                self.logger.info(f"{len(self.sample_id_list)} samples for (all countries) in split {self.split}")
+    #         if self.logger is not None:
+    #             self.logger.info(f"{len(self.sample_id_list)} samples for {self.countries} in split {self.split}")
+    #     else:
+    #         self.sample_id_list = all_ids
+    #         if self.logger is not None:
+    #             self.logger.info(f"{len(self.sample_id_list)} samples for (all countries) in split {self.split}")
 
     def set_split(self, split, version):
         import random
@@ -187,7 +187,7 @@ class ZODDatasetCustom(DatasetTemplate):
                 if candidate in checked_ids:
                     continue
                 checked_ids.add(candidate)
-                if self.get_label(candidate) is not None:
+                if self.get_label(candidate) is not None: # only valid train samples from train_full.txt
                     valid_ids.append(candidate)
             self.sample_id_list = valid_ids
             if self.logger is not None:
@@ -195,15 +195,26 @@ class ZODDatasetCustom(DatasetTemplate):
 
         elif split == 'val' and not self.dataset_cfg.SPLIT_CONFIG.USE_ORIGINAL_SPLIT:
             val_size = self.dataset_cfg.SPLIT_CONFIG.VAL_SIZE
+            random_seed = self.dataset_cfg.SPLIT_CONFIG.RANDOM_SEED
+            random.seed(random_seed)
+
             valid_ids = []
             checked_ids = set()
-            while len(valid_ids) < val_size and len(checked_ids) < len(candidate_ids):
-                candidate = random.choice(candidate_ids)
-                if candidate in checked_ids:
-                    continue
+            for candidate in candidate_ids:
                 checked_ids.add(candidate)
-                if self.get_label(candidate) is not None:
+                if self.get_label(candidate) is not None: # only valid labels from val_full.txt
                     valid_ids.append(candidate)
+
+            if len(valid_ids) < val_size:
+                train_split_dir = self.root_path / 'ImageSets' / ('train_' + self.version + '.txt')
+                train_ids = [x.strip() for x in open(train_split_dir).readlines()] if train_split_dir.exists() else []
+                train_ids_unique = [x for x in train_ids if x not in checked_ids]
+                random.shuffle(train_ids_unique)
+                for candidate in train_ids_unique:
+                    if len(valid_ids) >= val_size:
+                        break
+                    if self.get_label(candidate) is not None: # only valid labels from train_full.txt
+                        valid_ids.append(candidate)
             self.sample_id_list = valid_ids
             if self.logger is not None:
                 self.logger.info(f"{len(self.sample_id_list)} valid samples for {self.countries} in split {self.split}")
@@ -221,9 +232,19 @@ class ZODDatasetCustom(DatasetTemplate):
                 Returns:
                     np.array(N, 4): point cloud
         """
-        zod_frames_files = self.zod_frames[idx]
-        lidar_core_frame = zod_frames_files.info.get_key_lidar_frame()
-        pc = lidar_core_frame.read()
+        try:
+            zod_frames_files = self.zod_frames[idx]
+            lidar_core_frame = zod_frames_files.info.get_key_lidar_frame()
+            pc = lidar_core_frame.read()
+            # filter LiDAR source to contain only VLS128
+            if self.dataset_cfg.get('USE_VLS128_ONLY', False): 
+                vls128_mask = pc.diode_idx < 128
+                pc.points = pc.points[vls128_mask]
+                pc.intensity = pc.intensity[vls128_mask]
+                pc.diode_idx = pc.diode_idx[vls128_mask]
+                pc.timestamps = pc.timestamps[vls128_mask]
+        except Exception as e:
+            print(f"Error loading Lidar for {idx}: {e}")
 
         if num_features == 4:
             # scale intensity to [0,1] from [0,255], bc at ZOD it isn't default
@@ -289,7 +310,7 @@ class ZODDatasetCustom(DatasetTemplate):
         # Combine transformations LiDAR -> World -> Camera
         t_lidar_to_camera = Pose(t_world_to_camera.transform @ t_lidar_to_world.transform)
 
-        points_img = transform_points(pts_lidar[:, :3], t_lidar_to_camera.transform)
+        points_img = transform_points(pts_lidar, t_lidar_to_camera.transform)
 
         # Only points with positive
         positive_depth = points_img[:, 2] > 0 # z>0
@@ -301,7 +322,7 @@ class ZODDatasetCustom(DatasetTemplate):
 
         if vertical_only:
             if use_kitti_fov is not None:
-                fov = self.dataset_cfg.USE_KITTI_FOV # uses KITTI FoV [90°, 35°]
+                fov = self.dataset_cfg.USE_KITTI_FOV # uses KITTI FoV [180°, 35°]
             else:
                 fov = calib.cameras[camera].field_of_view # uses ZOD vertical FoV [67°]
 
@@ -332,6 +353,7 @@ class ZODDatasetCustom(DatasetTemplate):
         return truncated # 0: non-truncated, 1: truncated
     
     def get_object_truncation(self, box3d, calib, camera=Camera.FRONT, fov_range=245.0):
+        # TODO: Mit Prof. Lücken besprechen
         """
             4 -------- 5            0 -------- 1         \            /
            /|         /|            |          |          \  Camera  /
@@ -379,7 +401,7 @@ class ZODDatasetCustom(DatasetTemplate):
     def get_label(self, idx): 
         zod_frame = self.zod_frames[idx]
         obj_list = zod_frame.get_annotation(AnnotationProject.OBJECT_DETECTION) # contains all necessary information
-      
+
         # filter out objects without 2d/3d anno
         obj_list = [obj for obj in obj_list if obj.box2d is not None and obj.box3d is not None] 
         # DEBUG print
@@ -429,7 +451,7 @@ class ZODDatasetCustom(DatasetTemplate):
 
     def get_calib(self, idx):
         zod_frame = self.zod_frames[idx]
-
+        
         return zod_frame.calibration
     
     # Modified version of original get_infos() for pre-processing validation data
@@ -483,6 +505,10 @@ class ZODDatasetCustom(DatasetTemplate):
                     annotations = {}
                                     
                     annotations['name'] = np.array([obj.subclass for obj in obj_list])
+                    if self.dataset_cfg.get('MAP_MERGED_CLASSES', None) is not None:
+                        map_merge_class = self.dataset_cfg.MAP_MERGED_CLASSES
+                        annotations['name'] = np.vectorize(lambda name: map_merge_class[name], otypes=[str])(annotations['name'])
+                    
                     annotations['truncated'] = np.array([obj.truncation for obj in obj_list])
                     annotations['occluded'] = np.array([obj.occlusion for obj in obj_list])
                     annotations['alpha'] = np.array([-10.0 for _ in obj_list], dtype=np.float32) # dummy value, not provided
@@ -502,7 +528,7 @@ class ZODDatasetCustom(DatasetTemplate):
 
                     annotations['location'] = annotations['location'] @ self.Tr_Zod_Lidar_to_Kitti_Lidar # rotate
                     annotations['location'][:,2] -= self.dataset_cfg.LIDAR_Z_SHIFT # shift
-                    annotations['yaw'] = annotations['yaw'] + np.pi/2
+                    annotations['yaw'] = annotations['yaw'] - np.pi/2 # not + np.pi/2
                     annotations['yaw'] = common_utils.limit_period(annotations['yaw'], offset=0.5, period=2 * np.pi) # [-pi, pi]
 
                     loc = annotations['location'][:num_objects]
@@ -514,26 +540,28 @@ class ZODDatasetCustom(DatasetTemplate):
 
                     info['annos'] = annotations
 
-                    if count_inside_pts:
-                        points = self.get_lidar(sample_idx, num_features=4) # points in ZOD coordinate system (see above)
-                        fov_flag = self.get_fov_flag(points, calib) # FoV filtering in ZOD coordinate system
-                        points = points[fov_flag]
-                        
-                        if self.dataset_cfg.FOV_POINTS_ONLY:
-                            points = points[fov_flag]
+                    points = self.get_lidar(sample_idx, num_features=4) # points in ZOD coordinate system (see above)
 
-                        elif self.dataset_cfg.VERTICAL_FOV_ONLY:
-                            vertical_fov_flag = self.get_fov_flag(points, calib, vertical_only=self.dataset_cfg.VERTICAL_FOV_ONLY, 
-                                                          use_kitti_fov=self.dataset_cfg.USE_KITTI_FOV)
-                            points = points[vertical_fov_flag]
-                        else: 
-                            points = points # raw
+                    if self.dataset_cfg.VERTICAL_FOV_ONLY:
+                       vertical_fov_flag = self.get_fov_flag(points[:, 0:3], calib, vertical_only=self.dataset_cfg.VERTICAL_FOV_ONLY, 
+                                                       use_kitti_fov=self.dataset_cfg.USE_KITTI_FOV)
+                       points_dict = points[vertical_fov_flag].copy() # vertical FoV points in vertical KITTI FoV (~35°)
+                    else:
+                        points_dict = points.copy() # keep original
+                    
+                    # coordinate system alignment to KITTI
+                    points_dict[:, :3] = points_dict[:, :3] @ self.Tr_Zod_Lidar_to_Kitti_Lidar # rotate points to KITTI coordinate systeM
+                    points_dict[:, 2] -= self.dataset_cfg.LIDAR_Z_SHIFT # shift points to KITTI coordinate system
+
+                    info['points'] = points_dict 
+
+                    if count_inside_pts:
+                        fov_flag = self.get_fov_flag(points[:, 0:3], calib) # FoV filtering in ZOD coordinate system
+                        points = points[fov_flag]
 
                         # coordinate system alignment to KITTI
                         points[:, :3] = points[:, :3] @ self.Tr_Zod_Lidar_to_Kitti_Lidar # rotate points to KITTI coordinate system
                         points[:, 2] -= self.dataset_cfg.LIDAR_Z_SHIFT # shift points to KITTI coordinate system
-                        
-                        info['points'] = points
 
                         corners_lidar = box_utils.boxes_to_corners_3d(gt_boxes_lidar) # we need exact the same corner order, ZOD defines different one
                         num_points_in_gt = -np.ones(num_gt, dtype=np.int32)
@@ -597,6 +625,7 @@ class ZODDatasetCustom(DatasetTemplate):
             
             if has_label:
                 obj_list = self.get_label(sample_idx)
+
                 if obj_list is None:
                     return None # skip empty sample
                 annotations = {}
@@ -605,6 +634,7 @@ class ZODDatasetCustom(DatasetTemplate):
                 annotations['truncated'] = np.array([obj.truncation for obj in obj_list])
                 annotations['occluded'] = np.array([obj.occlusion for obj in obj_list])
                 annotations['alpha'] = np.array([-10.0 for _ in obj_list], dtype=np.float32) # dummy value, not provided
+                # TODO: Prof. Lücken fragen, was wir damit machen.
                 annotations['bbox'] = np.array([obj.box2d.xyxy for obj in obj_list], dtype=np.float32) # xmin, ymin, xmax, ymax
                 annotations['dimensions'] = np.array([obj.box3d.size for obj in obj_list]) # l, w, h (LiDAR) format
                 annotations['location'] = np.array([obj.box3d.center for obj in obj_list]) # x, y, z (LiDAR) format
@@ -626,7 +656,7 @@ class ZODDatasetCustom(DatasetTemplate):
                             |                                     |
                             |                                     |  Y (left)
                             |                                     | /
-                            |_____Y (forward, car front)          |/_____X (forward)
+                            |_____Y (forward, car front)          |/_____X (forward, car front)
                            /                                     
                           /                                     
                          X (right) 
@@ -640,7 +670,13 @@ class ZODDatasetCustom(DatasetTemplate):
 
                 annotations['location'] = annotations['location'] @ self.Tr_Zod_Lidar_to_Kitti_Lidar # rotate
                 annotations['location'][:,2] -= self.dataset_cfg.LIDAR_Z_SHIFT # shift
-                annotations['yaw'] = annotations['yaw'] + np.pi/2
+                """
+                ZOD: yaw=0 -> object shows in y-direction
+                KITTI: yaw=0 -> object shows in x-direction
+                Why -pi/2?:
+                You rotate the coordinate system by +90°, so the yaw must be adjusted by -90° to maintain the object direction
+                """
+                annotations['yaw'] = annotations['yaw'] - np.pi/2 # not + np.pi/2, see above
                 annotations['yaw'] = common_utils.limit_period(annotations['yaw'], offset=0.5, period=2 * np.pi) # [-pi, pi]
 
                 loc = annotations['location'][:num_objects]
@@ -654,7 +690,7 @@ class ZODDatasetCustom(DatasetTemplate):
 
                 if count_inside_pts:
                     points = self.get_lidar(sample_idx, num_features=4) # points in ZOD coordinate system (see above)
-                    fov_flag = self.get_fov_flag(points, calib) # FoV filtering in ZOD coordinate system
+                    fov_flag = self.get_fov_flag(points[:, 0:3], calib) # FoV filtering in ZOD coordinate system
                     pts_fov_aligned_kitti = points[fov_flag]
 
                     # coordinate system alignment to KITTI
@@ -682,16 +718,6 @@ class ZODDatasetCustom(DatasetTemplate):
         end_time = time.time()
         print("Total time for loading infos: ", end_time - start_time, "s")
         print("Loading speed for infos: ", len(sample_id_list) / (end_time - start_time), "sample/s")
-
-        # DEBUG
-        #from pympler import asizeof
-        #sample_list = list(infos)
-        #sample = sample_list[0]
-        #size_bytes = asizeof.asizeof(sample)
-        #size_mb = size_bytes / (1024 * 1024)
-        #size_gb = size_bytes / (1024 * 1024 * 1024)
-        #print(f"Sample size: {size_bytes:.0f} bytes ({size_mb:.2f} MB / {size_gb:.4f} GB)")
-        #return sample_list
         
         return list(infos)
 
@@ -725,7 +751,7 @@ class ZODDatasetCustom(DatasetTemplate):
         database_save_path.mkdir(parents=True, exist_ok=True)
         all_db_infos = {}
 
-        # Open 'zod_infos_train.pkl'
+        # Open 'zod_infos_train_full.pkl'
         with open(info_path, 'rb') as f:
             infos = pickle.load(f)
 
@@ -733,7 +759,7 @@ class ZODDatasetCustom(DatasetTemplate):
         with open(readme_file, 'w') as f:
             f.write(readme_content)
 
-        # For each .npy file
+        # For each .bin file
         for k in range(len(infos)):
             print('gt_database sample: %d/%d' % (k+1, len(infos)))
             
@@ -759,6 +785,8 @@ class ZODDatasetCustom(DatasetTemplate):
                 filename = '%s_%s_%d.bin' % (sample_idx, names[i], i) # leave it as .bin for OpenPCDet intern
                 filepath = database_save_path / filename
                 gt_points = points[point_indices[i] > 0]
+                if gt_points.shape[0] == 0: # Skip empty GT objects
+                    continue
 
                 gt_points[:, :3] -= gt_boxes[i, :3]
                 with open(filepath, 'w') as f:
@@ -818,14 +846,15 @@ class ZODDatasetCustom(DatasetTemplate):
                 'gt_boxes': gt_boxes_lidar
             })
 
+        if self.dataset_cfg.FOV_POINTS_ONLY and self.dataset_cfg.VERTICAL_FOV_ONLY:
+                raise ValueError("Configuration errorr: Only one of FOV_POINTS_ONLY or VERTICAL_FOV_ONLY may be true!")
         if "points" in get_item_list:
-            points = self.get_lidar(sample_idx) # points in ZOD coordinate system
+            points = self.get_lidar(sample_idx, num_features=4) # points in ZOD coordinate system
             if self.dataset_cfg.FOV_POINTS_ONLY:
-                fov_flag = self.get_fov_flag(points, calib) # hor. & ver. FoV filtering in ZOD coordinate system
+                fov_flag = self.get_fov_flag(points[:, 0:3], calib) # hor. & ver. FoV filtering in ZOD coordinate system
                 points = points[fov_flag]
             if self.dataset_cfg.VERTICAL_FOV_ONLY:
-                print("mache nur den vertikalen FoV als Beschränkung")
-                fov_flag = self.get_fov_flag(points, calib, vertical_only=self.dataset_cfg.VERTICAL_FOV_ONLY, 
+                fov_flag = self.get_fov_flag(points[:, 0:3], calib, vertical_only=self.dataset_cfg.VERTICAL_FOV_ONLY, 
                                              use_kitti_fov=self.dataset_cfg.USE_KITTI_FOV) # only vertical FoV filtering in ZOD coordinate system
                 points = points[fov_flag]
 
@@ -848,8 +877,8 @@ class ZODDatasetCustom(DatasetTemplate):
                 data_dict['location'] = annos['location']
                 data_dict['yaw'] = annos['yaw']
                 data_dict['box3d_corners'] = annos['box3d_corners']
-                data_dict['score'] = annos['score']
                 data_dict['difficulty'] = annos['difficulty']
+                data_dict['score'] = annos['score']
                 data_dict['image_shape'] = img_shape
 
         return data_list, applied_augmentors
@@ -857,46 +886,69 @@ class ZODDatasetCustom(DatasetTemplate):
 def create_zod_infos(dataset_cfg, class_names, data_path, save_path, workers=4):
     from time import sleep
 
-    dataset = ZODDatasetCustom(dataset_cfg=dataset_cfg, class_names=class_names, root_path=data_path, training=False, logger=common_utils.create_logger(), apply_class_mapping=False)
+    dataset = ZODDatasetCustom(dataset_cfg=dataset_cfg, class_names=class_names, root_path=data_path, training=False, logger=common_utils.create_logger(), creating_pkl_infos=True)
    
     train_split, val_split = 'train', 'val'
+    version = 'full'
 
     # Replacement for the fix value of 4 in get_infos() method
     num_features = len(dataset_cfg.POINT_FEATURE_ENCODING.src_feature_list)
 
-    train_filename = save_path / ('zod_infos_%s.pkl' % train_split)
-    val_filename = save_path / ('zod_infos_%s.pkl' % val_split)
-    trainval_filename = save_path / 'zod_infos_trainval.pkl'
+    train_filename = save_path / ('zod_infos_%s_%s.pkl' % (train_split, version))
+    val_filename = save_path / ('zod_%s_dataset.pkl' % val_split)
+    trainval_filename = save_path / ('zod_infos_trainval_%s.pkl' % version)
 
-    print('\n---------------Start to generate data infos--------------------------------------')
+    print('\n' + '-' * 36 + 'Start to generate data infos' + '-' * 37)
+    print('---------------CAUTION: Custom code is configured to serve as Augmentor NOT training-----------------')
 
-    dataset.set_split(train_split)
+    dataset.set_split(train_split, version)
     zod_infos_train = dataset.get_infos(num_workers=workers, has_label=True, count_inside_pts=True, num_features=num_features)
     with open(train_filename, 'wb') as f:
         pickle.dump(zod_infos_train, f)
     print('Zod info train file is saved to %s\n' % train_filename)
     sleep(3)
 
-    dataset.set_split(val_split)
-    zod_infos_val = dataset.get_infos_val(num_workers=workers, has_label=True, count_inside_pts=True, num_features=num_features)
+    dataset.set_split(val_split, version)
+    # ensure that mode 'test' will process the single scene with PointFeatureEncoder, DataProcessor, FOV_FLAG
+    dataset.training = False
+    zod_val_dataset = dataset.get_infos_val(num_workers=workers, has_label=True, count_inside_pts=True, num_features=num_features, class_names=class_names)
     with open(val_filename, 'wb') as f:
-        pickle.dump(zod_infos_val, f)
+        pickle.dump(zod_val_dataset, f)
     print('Zod info val file is saved to %s' % val_filename)
     sleep(3)
     
     with open(trainval_filename, 'wb') as f:
-        pickle.dump(zod_infos_train + zod_infos_val, f)
+        pickle.dump(zod_infos_train + zod_val_dataset, f)
     print('Zod info trainval file is saved to %s\n' % trainval_filename)
     sleep(3)
 
-    print('\n---------------Start create groundtruth database for data augmentation---------------')
-    print('------These groundtruth objects are randomly inserted into scenes during training----------')
-    
-    # Input the 'zod_infos_train.pkl' to generate gt_database (cutted objects of samples)
-    dataset.set_split(train_split)
-    dataset.create_groundtruth_database(train_filename, split=train_split)
+    print('\n---------------Start creating groundtruth database for later data augmentation-------------------------')
+    print('---------------CAUTION: Custom code is configured to serve as Augmentor NOT training-------------------')
+    print('---------------No DataProcessor and PointFeatureEncoder required, handled by training data creation----')
 
-    print('---------------Data preparation Done---------------\n')
+    # Input the 'zod_infos_train_full.pkl' to generate gt_database (cutted objects of samples)
+    dataset.set_split(train_split, version)
+    dataset.create_groundtruth_database(info_path=train_filename, version=version, used_classes=class_names, split=train_split)
+    print(f'---------------These groundtruth {train_split} objects are randomly inserted into samples (augmentation)-------')
+    print('-' * 41 + 'Data preparation Done' + '-' * 41)
+
+if __name__ == '__main__':
+    import sys
+
+    if sys.argv.__len__() > 1 and sys.argv[1] == 'create_zod_infos':
+
+        import yaml
+        from pathlib import Path
+        from easydict import EasyDict
+
+        dataset_cfg = EasyDict(yaml.safe_load(open(sys.argv[2])))
+        ROOT_DIR = (Path(__file__).resolve().parent / '../../../').resolve()
+        create_zod_infos(
+            dataset_cfg=dataset_cfg,
+            class_names = ['Vehicle_Car', 'Pedestrian', 'VulnerableVehicle_Bicycle'],
+            data_path=ROOT_DIR / 'data' / 'zod',
+            save_path=ROOT_DIR / 'data' / 'zod'
+        )
 
 # TODO: 
 # Mit Professor Lücken über das FoV sprechen. Nehmen wir Kamera (35°) oder LiDAR (26.8°) von KITTI?
@@ -904,8 +956,7 @@ def create_zod_infos(dataset_cfg, class_names, data_path, save_path, workers=4):
 # C: [120°, 67°] -> [90°, 35°] nur vertical FoV interessant
 # L: [40.0°] -> [26.8°]
 
-# Prüfen die Inhalte der .pkl Dateien und mit KITTI abgleichen, danach zod_train_dataset set erstellen und visualisieren
-# wenn alles passt die ZOD-Daten im KITTI-Format als .txt erstellen.
+# wenn alles passt die ZOD-Daten im KITTI-Format als .txt erstellen (Evaluierung).
 
     
     

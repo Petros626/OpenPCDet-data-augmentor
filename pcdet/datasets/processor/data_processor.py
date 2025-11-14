@@ -80,29 +80,29 @@ class DataProcessor(object):
 
     def mask_points_and_boxes_outside_range(self, data_dict=None, config=None):
         if data_dict is None:
-            print('DataProcessor: mask_points_and_boxes_outside_range() called with no data_dict')
+            #print('DataProcessor: mask_points_and_boxes_outside_range() called with no data_dict')
             return partial(self.mask_points_and_boxes_outside_range, config=config)
 
         if data_dict.get('points', None) is not None:
-            print(f"DataProcessor: masking {data_dict['points'].shape[0]} points of the point cloud range {self.point_cloud_range}")
+            #print(f"DataProcessor: masking {data_dict['points'].shape[0]} points of the point cloud range {self.point_cloud_range}")
             mask = common_utils.mask_points_by_range(data_dict['points'], self.point_cloud_range)
             data_dict['points'] = data_dict['points'][mask]
-            print(f"DataProcessor: remaining points after masking: {data_dict['points'].shape[0]}")
+            #print(f"DataProcessor: remaining points after masking: {data_dict['points'].shape[0]}")
 
         if data_dict.get('gt_boxes', None) is not None and config.REMOVE_OUTSIDE_BOXES and self.training:
-            print('DataProcessor: masking ground truth boxes outside of the point cloud range')
+            #print('DataProcessor: masking ground truth boxes outside of the point cloud range')
             mask = box_utils.mask_boxes_outside_range_numpy(
                 data_dict['gt_boxes'], self.point_cloud_range, min_num_corners=config.get('min_num_corners', 1), 
                 use_center_to_filter=config.get('USE_CENTER_TO_FILTER', True)
             )
             data_dict['gt_boxes'] = data_dict['gt_boxes'][mask]
-            print(f"DataProcessor: remaining ground truth boxes after masking: {data_dict['gt_boxes'].shape[0]}")
+            #print(f"DataProcessor: remaining ground truth boxes after masking: {data_dict['gt_boxes'].shape[0]}")
             
         return data_dict
 
     def shuffle_points(self, data_dict=None, config=None):
         if data_dict is None:
-            print('DataProcessor: shuffle_points() called with no data_dict')
+            #print('DataProcessor: shuffle_points() called with no data_dict')
             return partial(self.shuffle_points, config=config)
 
         if config.SHUFFLE_ENABLED[self.mode]:
@@ -110,7 +110,7 @@ class DataProcessor(object):
             shuffle_idx = np.random.permutation(points.shape[0])
             points = points[shuffle_idx]
             data_dict['points'] = points
-            print(f'DataProcessor: points shuffled in {self.mode} mode')
+            #print(f'DataProcessor: points shuffled in {self.mode} mode')
 
         return data_dict
 

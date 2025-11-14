@@ -173,7 +173,7 @@ class WaymoDataset(DatasetTemplate):
 
     def get_infos(self, raw_data_path, save_path, num_workers=multiprocessing.cpu_count(), has_label=True, sampled_interval=1, update_info_only=False):
         from . import waymo_utils
-        print('---------------The waymo sample interval is %d, total sequecnes is %d-----------------'
+        print('---------------The waymo sample interval is %d, total sequences is %d-----------------'
               % (sampled_interval, len(self.sample_sequence_list)))
 
         process_single_sequence = partial(
