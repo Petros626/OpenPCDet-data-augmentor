@@ -5,7 +5,7 @@ from PIL import Image
 import copy
 import torch
 
-from ...utils import common_utils
+from ...utils import common_utils, sampling_utils
 from . import augmentor_utils, database_sampler
 from ...ops.iou3d_nms.iou3d_nms_utils import boxes_iou3d_gpu
 from ..augmentor.augmentor_utils import get_points_in_box
@@ -32,6 +32,7 @@ class DataAugmentor(object):
             self.data_augmentor_queue.append(cur_augmentor)
             self.applied_augmentors.append(cur_cfg.NAME)
 
+
     def disable_augmentation(self, augmentor_configs):
         self.data_augmentor_queue = []
         aug_config_list = augmentor_configs if isinstance(augmentor_configs, list) \
@@ -44,29 +45,34 @@ class DataAugmentor(object):
             cur_augmentor = getattr(self, cur_cfg.NAME)(config=cur_cfg)
             self.data_augmentor_queue.append(cur_augmentor)
     
-    # https://github.com/traveller59/second.pytorch/blob/1b2b58bec1c535a06d7785043664c0fc2ee375f9/second/core/sample_ops.py#L14
-    # https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/augmentor/database_sampler.py     
+    
     def gt_sampling(self, config=None):
+    # source:
+    # https://github.com/traveller59/second.pytorch/blob/1b2b58bec1c535a06d7785043664c0fc2ee375f9/second/core/sample_ops.py#L14
+    # https://github.com/open-mmlab/OpenPCDet/blob/master/pcdet/datasets/augmentor/database_sampler.py 
         db_sampler = database_sampler.DataBaseSampler(
             root_path=self.root_path,
             sampler_cfg=config,
             class_names=self.class_names,
             logger=self.logger
         )
-        print('DataAugmentor: gt_sampling() called for initializing DataBaseSampler')
+        #print('DataAugmentor: gt_sampling() called for initializing DataBaseSampler')
         return db_sampler
+
 
     def __getstate__(self):
         d = dict(self.__dict__)
         del d['logger']
         return d
 
+
     def __setstate__(self, d):
         self.__dict__.update(d)
 
+
     def random_world_flip(self, data_dict=None, config=None):
         if data_dict is None:
-            print('DataAugmentor: random_world_flip() called with no data_dict')
+            #print('DataAugmentor: random_world_flip() called with no data_dict')
             return partial(self.random_world_flip, config=config)
         
         gt_boxes, points = data_dict['gt_boxes'], data_dict['points']
@@ -76,9 +82,9 @@ class DataAugmentor(object):
             gt_boxes, points, enable = getattr(augmentor_utils, 'random_flip_along_%s' % cur_axis)(
                 gt_boxes, points, return_flip=True
             )
-            data_dict['flip_%s'%cur_axis] = enable
             
-            print(f"DataAugmentor: flip along {cur_axis}-axis, always enabled: {enable}")
+            
+            #print(f"DataAugmentor: flip along {cur_axis}-axis, always enabled: {enable}")
             
             if 'roi_boxes' in data_dict.keys():
                 num_frame, num_rois,dim = data_dict['roi_boxes'].shape
@@ -89,12 +95,14 @@ class DataAugmentor(object):
 
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
-        print('DataAugmentor: random world flip completed')
+        data_dict['flip_%s' % cur_axis] = enable
+        #print('DataAugmentor: random world flip completed')
         return data_dict
     
+
     def random_world_rotation(self, data_dict=None, config=None):
         if data_dict is None:
-            print('DataAugmentor: random_world_rotation() called with no data_dict')
+            #print('DataAugmentor: random_world_rotation() called with no data_dict')
             return partial(self.random_world_rotation, config=config)
         
         rot_range = config['WORLD_ROT_ANGLE']
@@ -103,8 +111,9 @@ class DataAugmentor(object):
         gt_boxes, points, noise_rot, enable = augmentor_utils.global_rotation(
             data_dict['gt_boxes'], data_dict['points'], rot_range=rot_range, return_rot=True
         )
-        print(f'DataAugmentor: rotate with range: {rot_range}, enabled: {enable}')
-        print(f'DataAugmentor: applied world noise rotation: {noise_rot}')
+        #print(f'DataAugmentor: rotate with range: {rot_range}, enabled: {enable}')
+        #print(f'DataAugmentor: applied world noise rotation: {noise_rot}')
+
         if 'roi_boxes' in data_dict.keys():
             num_frame, num_rois,dim = data_dict['roi_boxes'].shape
             roi_boxes, _, _ = augmentor_utils.global_rotation(
@@ -113,9 +122,10 @@ class DataAugmentor(object):
 
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
-        data_dict['noise_glob_rot'] = noise_rot
-        print('DataAugmentor: random world rotation completed')
+        data_dict['noise_world_rotation'] = noise_rot
+        #print('DataAugmentor: random world rotation completed')
         return data_dict
+
 
     def random_world_scaling(self, data_dict=None, config=None):
         if data_dict is None:
@@ -136,6 +146,7 @@ class DataAugmentor(object):
         data_dict['noise_scale'] = noise_scale
         return data_dict
 
+
     def random_image_flip(self, data_dict=None, config=None):
         if data_dict is None:
             return partial(self.random_image_flip, config=config)
@@ -155,9 +166,12 @@ class DataAugmentor(object):
         data_dict['gt_boxes'] = gt_boxes
         return data_dict
 
+
     def random_world_translation(self, data_dict=None, config=None):
         if data_dict is None:
+            #print('DataAugmentor: random_world_translation() called with no data_dict')
             return partial(self.random_world_translation, config=config)
+        
         noise_translate_std = config['NOISE_TRANSLATE_STD']
         assert len(noise_translate_std) == 3
         noise_translate = np.array([
@@ -169,14 +183,19 @@ class DataAugmentor(object):
         gt_boxes, points = data_dict['gt_boxes'], data_dict['points']
         points[:, :3] += noise_translate
         gt_boxes[:, :3] += noise_translate
+        #print(f'DataAugmentor: translate with std: {noise_translate_std}')
+        #print(f'DataAugmentor: applied world noise translation: {noise_translate.flatten()}')
                 
         if 'roi_boxes' in data_dict.keys():
             data_dict['roi_boxes'][:, :3] += noise_translate
         
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
-        data_dict['noise_translate'] = noise_translate
+        data_dict['noise_world_translation'] = noise_translate
+        #print('DataAugmentor: random world translation completed')
+
         return data_dict
+
 
     def random_local_translation(self, data_dict=None, config=None):
         """
@@ -194,31 +213,118 @@ class DataAugmentor(object):
 
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
+
         return data_dict
     
+
     def random_local_rotation(self, data_dict=None, config=None):
         """
         Please check the correctness of it before using.
         """
         if data_dict is None:
-            print('DataAugmentor: random_local_rotation() called with no data_dict')
+            #print('DataAugmentor: random_local_rotation() called with no data_dict')
             return partial(self.random_local_rotation, config=config)
+        
         rot_range = config['LOCAL_ROT_ANGLE']
         if not isinstance(rot_range, list):
             rot_range = [-rot_range, rot_range]
         gt_boxes, points, noise_rot, enable = augmentor_utils.local_rotation(
             data_dict['gt_boxes'], data_dict['points'], rot_range=rot_range
         )
-        print(f'DataAugmentor: random local rotation with range: {rot_range}, enabled: {enable}')
-        print(f'DataAugmentor: applied local noise rotation: {noise_rot}')
+        #print(f'DataAugmentor: random local rotation with range: {rot_range}, enabled: {enable}')
+        #print(f'DataAugmentor: applied local noise rotation: {noise_rot}')
 
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
-        data_dict['noise_loc_rot'] = noise_rot
-        print('DataAugmentor: random local rotation completed')
+        data_dict['noise_local_rotation'] = noise_rot
+        #print('DataAugmentor: random local rotation completed')
+
+        return data_dict
+    
+    def get_polar_image(self, points):
+        # source: https://github.com/griesbchr/3DTrans/blob/master/pcdet/utils/downsample_utils.py
+        theta, phi = sampling_utils.compute_angles(points[:,:3])
+        r = np.sqrt(np.sum(points[:,:3]**2, axis=1))
+        polar_image = points.copy()
+        polar_image[:,0] = phi 
+        polar_image[:,1] = theta
+        polar_image[:,2] = r 
+        return polar_image
+
+    def random_beam_upsample_griesbacher(self, data_dict=None, config=None):
+        # source: https://github.com/griesbchr/3DTrans/blob/3174699105aefb3ed11e524606f707fd91239850/pcdet/datasets/augmentor/data_augmentor.py#L147
+
+        if data_dict is None:
+            return partial(self.random_beam_upsample_griesbacher, config=config)
+        
+        # get num_interp_beams, 1 is default if not in cfg
+        num_interp_beams = config.get('NUM_INTERP_BEAMS', 1)
+
+        points_with_beam_labels = data_dict['points']
+        beam_label = points_with_beam_labels[:, -1].astype(int)
+        points = points_with_beam_labels[:, :-1]
+
+        polar_image = self.get_polar_image(points)
+        phi = polar_image[:, 0]
+
+        new_pcs = [points]
+
+        # get upsample propability 
+        beam_upsample_prob = config.get('BEAM_UPSAMPLE_PROB', 1)
+
+        for i in range(data_dict['num_aug_beams'] - 1):
+            if np.random.rand() > beam_upsample_prob:
+                continue
+            curr_beam_mask = (beam_label == i)
+            next_beam_mask = (beam_label == i + 1)
+
+            if np.sum(curr_beam_mask) == 0 or np.sum(next_beam_mask) == 0:
+                continue
+
+            delta_phi = np.abs(phi[curr_beam_mask, np.newaxis] - phi[np.newaxis, next_beam_mask])
+            corr_idx = np.argmin(delta_phi, 1)
+            min_delta = np.min(delta_phi, 1)
+            mask = min_delta < config['PHI_THRESHOLD']
+            curr_beam = polar_image[curr_beam_mask][mask]
+            next_beam = polar_image[next_beam_mask][corr_idx[mask]]
+            # mask out if r distance is too large (R_THRESHOLD)
+            r_diff = np.abs(curr_beam[:, 2] - next_beam[:, 2])
+            mask = r_diff < config['R_THRESHOLD']
+            curr_beam = curr_beam[mask]
+            next_beam = next_beam[mask]
+
+            for j in range(1, num_interp_beams + 1):
+                new_beam = (j/(num_interp_beams+1))*curr_beam + ((num_interp_beams-j+1)/(num_interp_beams+1))*next_beam
+                
+                new_pc = new_beam.copy()
+                new_pc[:,0] = np.cos(new_beam[:,1]) * np.cos(new_beam[:,0]) * new_beam[:,2]
+                new_pc[:,1] = np.cos(new_beam[:,1]) * np.sin(new_beam[:,0]) * new_beam[:,2]
+                new_pc[:,2] = np.sin(new_beam[:,1]) * new_beam[:,2]
+
+                new_pcs.append(new_pc)
+        
+        data_dict['points'] = np.concatenate(new_pcs, 0)
 
         return data_dict
 
+    def range_based_densification(self, data_dict=None, config=None):
+        if data_dict is None:
+                return partial(self.range_based_densification, config=config)
+
+        points = data_dict['points']
+
+        points = data_dict['points']
+        num_point_copies = config.get('NUM_POINT_COPIES', 1)
+        delta_r_range = config.get('DELTA_R_RANGE', [0.1, 0.3])
+
+        densified_points = augmentor_utils.densify_points_along_range(points, num_point_copies, delta_r_range)
+        data_dict['points'] = densified_points
+
+        return data_dict
+
+    def d2_range_image_4ch(self, data_dict=None, config=None):
+        pass
+    
     def random_local_rotation_v2(self, data_dict=None, config=None):
         """
         Please check the correctness of it before using. Modified version of random_local_rotation.
@@ -347,6 +453,7 @@ class DataAugmentor(object):
                 print('DataAugmentor: random local rotation completed')
                 return data_dict
 
+
     # dummy function
     def random_local_rotation_v3(self, data_dict=None, config=None):
         """
@@ -410,19 +517,29 @@ class DataAugmentor(object):
             print('DataAugmentor: random local rotation v2 with box_collision_test() completed')
             return data_dict
 
+
     def random_local_scaling(self, data_dict=None, config=None):
         """
         Please check the correctness of it before using.
         """
         if data_dict is None:
+            #print('DataAugmentor: random_local_scaling() called with no data_dict')
             return partial(self.random_local_scaling, config=config)
-        gt_boxes, points = augmentor_utils.local_scaling(
-            data_dict['gt_boxes'], data_dict['points'], config['LOCAL_SCALE_RANGE']
+        
+        scale_range = config['LOCAL_SCALE_RANGE']
+        assert len(scale_range) == 2
+        gt_boxes, points, noise_scl, enable = augmentor_utils.local_scaling(
+            data_dict['gt_boxes'], data_dict['points'], scale_range=scale_range
         )
+        #print(f'DataAugmentor: random local scaling with scale: {scale_range}, enabled: {enable}')
+        #print(f'DataAugmentor: applied local noise scaling: {noise_scl}')
 
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
+        data_dict['noise_local_scaling'] = noise_scl
+
         return data_dict
+
 
     def random_world_frustum_dropout(self, data_dict=None, config=None):
         """
@@ -443,6 +560,7 @@ class DataAugmentor(object):
         data_dict['points'] = points
         return data_dict
 
+
     def random_local_frustum_dropout(self, data_dict=None, config=None):
         """
         Please check the correctness of it before using.
@@ -461,6 +579,7 @@ class DataAugmentor(object):
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
         return data_dict
+
 
     def random_local_pyramid_aug(self, data_dict=None, config=None):
         """
@@ -485,6 +604,7 @@ class DataAugmentor(object):
         data_dict['points'] = points
         return data_dict
 
+
     def imgaug(self, data_dict=None, config=None):
         if data_dict is None:
             return partial(self.imgaug, config=config)
@@ -507,7 +627,40 @@ class DataAugmentor(object):
         data_dict["camera_imgs"] = new_imgs
         return data_dict
 
+
     def forward(self, data_dict):
+        """
+        Args:
+            data_dict:
+                points: (N, 3 + C_in)
+                gt_boxes: optional, (N, 7) [x, y, z, dx, dy, dz, heading]
+                gt_names: optional, (N), string
+                ...
+
+        Returns:
+        """
+        for cur_augmentor in self.data_augmentor_queue:
+            data_dict = cur_augmentor(data_dict=data_dict)
+
+        data_dict['gt_boxes'][:, 6] = common_utils.limit_period(
+            data_dict['gt_boxes'][:, 6], offset=0.5, period=2 * np.pi
+        )
+        # if 'calib' in data_dict:
+        #     data_dict.pop('calib')
+        if 'road_plane' in data_dict:
+            data_dict.pop('road_plane')
+        if 'gt_boxes_mask' in data_dict:
+            gt_boxes_mask = data_dict['gt_boxes_mask']
+            data_dict['gt_boxes'] = data_dict['gt_boxes'][gt_boxes_mask]
+            data_dict['gt_names'] = data_dict['gt_names'][gt_boxes_mask]
+            if 'gt_boxes2d' in data_dict:
+                data_dict['gt_boxes2d'] = data_dict['gt_boxes2d'][gt_boxes_mask]
+
+            data_dict.pop('gt_boxes_mask')
+        return data_dict
+
+
+    def forward_custom(self, data_dict):
         """
         Args:
             data_dict:
@@ -542,7 +695,7 @@ class DataAugmentor(object):
         dict_list = [original_dict]
 
         # augmentation loop, mentioned techniques in .yaml applied
-        # Note: gt_sampling for all via if else statement
+        # NOTE: gt_sampling for all via if else statement
         for cur_augmentor in self.data_augmentor_queue: 
             
             temp_dict = cur_augmentor(data_dict=copy.deepcopy(data_dict))

@@ -15,7 +15,7 @@ def random_flip_along_x(gt_boxes, points, return_flip=False, enable=None):
     """
     if enable is None:
         #enable = np.random.choice([False, True], replace=False, p=[0.5, 0.5])
-        enable = True
+        enable = True # flip the sample always
 
     if enable:
         gt_boxes[:, 1] = -gt_boxes[:, 1]
@@ -93,6 +93,7 @@ def global_scaling(gt_boxes, points, scale_range, return_scale=False):
     if return_scale:
         return gt_boxes, points, noise_scale
     return gt_boxes, points
+
 
 def global_scaling_with_roi_boxes(gt_boxes, roi_boxes, points, scale_range, return_scale=False):
     """
@@ -304,7 +305,7 @@ def local_scaling(gt_boxes, points, scale_range):
         # augs[f'object_{idx}'] = noise_scale
         points_in_box, mask = get_points_in_box(points, box)
         
-        # tranlation to axis center
+        # translation to axis center
         points[mask, 0] -= box[0]
         points[mask, 1] -= box[1]
         points[mask, 2] -= box[2]
@@ -312,13 +313,16 @@ def local_scaling(gt_boxes, points, scale_range):
         # apply scaling
         points[mask, :3] *= noise_scale
         
-        # tranlation back to original position
+        # translation back to original position
         points[mask, 0] += box[0]
         points[mask, 1] += box[1]
         points[mask, 2] += box[2]
         
         gt_boxes[idx, 3:6] *= noise_scale
-    return gt_boxes, points
+    
+    if scale_range:
+        return gt_boxes, points, noise_scale, True
+    return gt_boxes, points, False
 
 
 #######################################################################################################################################
@@ -384,6 +388,7 @@ def lines_intersect(A, B, C, D):
     return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
 
 #######################################################################################################################################
+
 
 def local_rotation(gt_boxes, points, rot_range):
     """
@@ -725,3 +730,39 @@ def local_pyramid_swap(gt_boxes, points, prob, max_num_pts, pyramids=None):
             points_res = np.concatenate(points_res, axis=0)
             points = np.concatenate([remain_points, points_res], axis=0)
     return gt_boxes, points
+
+def densify_points_along_range(points, num_point_copies=1, delta_r_range=(0.1, 0.3)):
+    """
+    Args:
+        points: (N, 3 + C) numpy array
+        num_point_copies: how many new points per original point
+        delta_r_range: range for sampling delta r
+    Returns:
+        (N * num_copies, 3 + C) new points
+    """
+    xyz = points[:, :3]
+    rest = points[:, 3:] if points.shape > 3 else None # intensity, diode_idx, timestamp etc.
+
+    r = np.linalg.norm(xyz, axis=1) # range (r)
+    theta = np.arcsin(xyz[:, 2] / r) # elevation angle (θ)        
+    phi = np.arctan2(xyz[:, 1] / xyz[:, 0]) # azimuth angle (ϕ)
+
+    new_points = [] 
+
+    for i in range(num_point_copies):
+        delta_r = np.random.uniform(delta_r_range[0], delta_r_range[1], size=r.shape)
+        r_new = r + delta_r
+        x_new = r_new * np.cos(theta) * np.cos(phi)
+        y_new = r_new * np.cos(theta) * np.sin(phi)
+        z_new = r_new * np.sin(theta)
+        xyz_new = np.stack([x_new, y_new, z_new], axis=1)
+
+        if rest is not None:
+            pts_new = np.concatenate([xyz_new, rest], axis=1) # add LiDAR charateristics
+
+        else:
+            pts_new = xyz_new
+            
+        new_points.append(pts_new)
+
+    return np.vstack(new_points)          

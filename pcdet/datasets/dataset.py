@@ -12,7 +12,7 @@ from .processor.point_feature_encoder import PointFeatureEncoder
 
 
 class DatasetTemplate(torch_data.Dataset):
-    def __init__(self, dataset_cfg=None, class_names=None, training=True, root_path=None, logger=None):
+    def __init__(self, dataset_cfg=None, class_names=None, training=True, root_path=None, logger=common_utils.create_logger()):
         super().__init__()
         self.dataset_cfg = dataset_cfg
         self.training = training
@@ -155,7 +155,71 @@ class DatasetTemplate(torch_data.Dataset):
         data_dict['lidar_aug_matrix'] = lidar_aug_matrix
         return data_dict
 
-    def prepare_data(self, data):
+    def prepare_data(self, data_dict):
+        """
+        Args:
+            data_dict:
+                points: optional, (N, 3 + C_in)
+                gt_boxes: optional, (N, 7 + C) [x, y, z, dx, dy, dz, heading, ...]
+                gt_names: optional, (N), string
+                ...
+
+        Returns:
+            data_dict:
+                frame_id: string
+                points: (N, 3 + C_in)
+                gt_boxes: optional, (N, 7 + C) [x, y, z, dx, dy, dz, heading, ...]
+                gt_names: optional, (N), string
+                use_lead_xyz: bool
+                voxels: optional (num_voxels, max_points_per_voxel, 3 + C)
+                voxel_coords: optional (num_voxels, 3)
+                voxel_num_points: optional (num_voxels)
+                ...
+        """
+        if self.training:
+            assert 'gt_boxes' in data_dict, 'gt_boxes should be provided for training'
+            gt_boxes_mask = np.array([n in self.class_names for n in data_dict['gt_names']], dtype=np.bool_)
+            
+            if 'calib' in data_dict:
+                calib = data_dict['calib']
+
+            data_dict = self.data_augmentor.forward(
+                data_dict={
+                    **data_dict,
+                    'gt_boxes_mask': gt_boxes_mask
+                }
+            )
+            if 'calib' in data_dict:
+                data_dict['calib'] = calib
+
+        data_dict = self.set_lidar_aug_matrix(data_dict)
+        if data_dict.get('gt_boxes', None) is not None:
+            selected = common_utils.keep_arrays_by_name(data_dict['gt_names'], self.class_names)
+            data_dict['gt_boxes'] = data_dict['gt_boxes'][selected]
+            data_dict['gt_names'] = data_dict['gt_names'][selected]
+            gt_classes = np.array([self.class_names.index(n) + 1 for n in data_dict['gt_names']], dtype=np.int32)
+            gt_boxes = np.concatenate((data_dict['gt_boxes'], gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
+            data_dict['gt_boxes'] = gt_boxes
+
+            if data_dict.get('gt_boxes2d', None) is not None:
+                data_dict['gt_boxes2d'] = data_dict['gt_boxes2d'][selected]
+
+        if data_dict.get('points', None) is not None:
+            data_dict = self.point_feature_encoder.forward(data_dict)
+
+        data_dict = self.data_processor.forward(
+            data_dict=data_dict
+        )
+
+        if self.training and len(data_dict['gt_boxes']) == 0:
+            new_index = np.random.randint(self.__len__())
+            return self.__getitem__(new_index)
+
+        data_dict.pop('gt_names', None)
+
+        return data_dict
+
+    def prepare_data_custom(self, data):
         """
         Args:
             data_dict:
@@ -176,7 +240,6 @@ class DatasetTemplate(torch_data.Dataset):
                 voxel_num_points: optional (num_voxels)
                 ...
         """
-        print('DatasetTemplate: prepare_data() called')
         
         if self.training:
             assert 'gt_boxes' in data, 'gt_boxes should be provided for training'
@@ -200,7 +263,7 @@ class DatasetTemplate(torch_data.Dataset):
             This matrix describes the transformation of IMU coordinates into the LiDAR coordinate system. 
             """
             
-            data_list, applied_augmentors = self.data_augmentor.forward(
+            data_list, applied_augmentors = self.data_augmentor.forward_custom(
                  data_dict={
                      **data,
                      'gt_boxes_mask': gt_boxes_mask
@@ -208,7 +271,7 @@ class DatasetTemplate(torch_data.Dataset):
             )
 
             # iterates over each data_dict in data_list that you have previously created. 
-            # data_list contains several dictionaries: the original, unmodified sample and all (NxNAME: in .yaml) augmented samples.
+            # data_list contains several dictionaries: the original sample and N augmented samples (NxAugmentation_technique: in .yaml).
             for data_dict in data_list:
 
                 if 'calib' in data_dict:
@@ -222,7 +285,7 @@ class DatasetTemplate(torch_data.Dataset):
                     data_dict['gt_names'] = data_dict['gt_names'][selected]
                     # index added to gt_boxes (Car: 1, Pedstrian: 2, Cyclist: 3)
                     gt_classes = np.array([self.class_names.index(n) + 1 for n in data_dict['gt_names']], dtype=np.int32)
-                    # already transformed 3D boxes LiDAR coord. + add number for the class
+                    # 3D boxes LiDAR coord. + add number for the class
                     gt_boxes = np.concatenate((data_dict['gt_boxes'], gt_classes.reshape(-1, 1).astype(np.float32)), axis=1)
                     data_dict['gt_boxes'] = gt_boxes
 
@@ -236,16 +299,16 @@ class DatasetTemplate(torch_data.Dataset):
                     data_dict=data_dict
                 )
 
-                # NOTE: The DataProcessor related to the .yaml param "REMOVE_OUTSIDE_BOXES: True" will filter out objects (points) and gt_boxes out of the specified
-                # pc range. Samples get replaced by new index (refer to def __len__, class KittiDataset).
+                # NOTE: The DataProcessor related to the kitti_dataset.yaml param "REMOVE_OUTSIDE_BOXES: True" will filter out objects 
+                # (points) and gt_boxes out of the specified point cloud range. Samples get replaced by new index 
+                # (refer to def __len__, class KittiDatasetCustom).
                 if self.training and len(data_dict['gt_boxes']) == 0:
                     new_index = np.random.randint(self.__len__())
-                    return self.__getitem__(new_index)
+                    if self.logger is not None:
+                        self.logger.info(f"Sample {data_dict.get('frame_id', 'unknown')} has not gt_boxes. Replacing by new index {new_index}")
+                    return self.__getitem__(new_index) # load new sample
                 
-                # keep the label names, but also contained as index in gt_boxes[7]
-                #data_dict.pop('gt_names', None) 
-                
-        # "original" dict with N augmented dicts as list
+        # "original" dict with Nxaugmented dicts as list
         return data_list, applied_augmentors
 
     @staticmethod

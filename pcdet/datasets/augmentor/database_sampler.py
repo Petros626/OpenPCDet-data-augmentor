@@ -39,7 +39,7 @@ class DataBaseSampler(object):
                 db_info_path = self.root_path.resolve() / sampler_cfg.DB_INFO_PATH[0]
                 sampler_cfg.NUM_POINT_FEATURES = sampler_cfg.BACKUP_DB_INFO['NUM_POINT_FEATURES']
                 
-            with open(str(db_info_path), 'rb') as f: # loading the 'kitti_dbinfos_train.pkl' with classes
+            with open(str(db_info_path), 'rb') as f: # loading the 'xyz_dbinfos_train.pkl' with classes
                 infos = pickle.load(f)
                 [self.db_infos[cur_class].extend(infos[cur_class]) for cur_class in class_names]
 
