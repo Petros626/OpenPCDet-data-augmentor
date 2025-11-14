@@ -7,24 +7,28 @@ from pcdet.utils import common_utils
 
 from .dataset import DatasetTemplate
 from .kitti.kitti_dataset import KittiDataset
+from .kitti.kitti_dataset_custom import KittiDatasetCustom # new for augmentation dataset generation only
+from .zod.zod_dataset_custom import ZODDatasetCustom
 from .nuscenes.nuscenes_dataset import NuScenesDataset
 from .waymo.waymo_dataset import WaymoDataset
 from .pandaset.pandaset_dataset import PandasetDataset
 from .lyft.lyft_dataset import LyftDataset
 from .once.once_dataset import ONCEDataset
-from .argo2.argo2_dataset import Argo2Dataset
+#from .argo2.argo2_dataset import Argo2Dataset # temporary numpy fix for my venv
 from .custom.custom_dataset import CustomDataset
 
 __all__ = {
     'DatasetTemplate': DatasetTemplate,
     'KittiDataset': KittiDataset,
+    'KittiDatasetCustom': KittiDatasetCustom, # new for augmentation dataset generation only
+    'ZODDatasetCustom': ZODDatasetCustom,
     'NuScenesDataset': NuScenesDataset,
     'WaymoDataset': WaymoDataset,
     'PandasetDataset': PandasetDataset,
     'LyftDataset': LyftDataset,
     'ONCEDataset': ONCEDataset,
     'CustomDataset': CustomDataset,
-    'Argo2Dataset': Argo2Dataset
+#    'Argo2Dataset': Argo2Dataset
 }
 
 
@@ -50,9 +54,9 @@ class DistributedSampler(_DistributedSampler):
 
         return iter(indices)
 
-
 def build_dataloader(dataset_cfg, class_names, batch_size, dist, root_path=None, workers=4, seed=None,
                      logger=None, training=False, merge_all_iters_to_one_epoch=False, total_epochs=0):
+
     # read the dataset cfgs from .yaml
     dataset = __all__[dataset_cfg.DATASET](
         dataset_cfg=dataset_cfg,
