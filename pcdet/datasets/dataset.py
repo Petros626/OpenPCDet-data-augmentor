@@ -295,20 +295,23 @@ class DatasetTemplate(torch_data.Dataset):
                 if data_dict.get('points', None) is not None:
                     data_dict = self.point_feature_encoder.forward(data_dict)
                 
-                data_dict = self.data_processor.forward(
-                    data_dict=data_dict
-                )
+                data_dict = self.data_processor.forward(data_dict=data_dict)
 
-                # NOTE: The DataProcessor related to the kitti_dataset.yaml param "REMOVE_OUTSIDE_BOXES: True" will filter out objects 
+                # temporary fix; map the classes from ZOD to KITTI
+                if self.dataset_cfg.get('MAP_MERGED_CLASSES', None) is not None:
+                    map_merge_class = self.dataset_cfg.MAP_MERGED_CLASSES
+                    data_dict['gt_names'] = np.vectorize(lambda name: map_merge_class[name], otypes=[str])(data_dict['gt_names'])
+            
+                # NOTE: The DataProcessor related to the xyz_dataset.yaml param "REMOVE_OUTSIDE_BOXES: True" will filter out objects 
                 # (points) and gt_boxes out of the specified point cloud range. Samples get replaced by new index 
-                # (refer to def __len__, class KittiDatasetCustom).
+                # (refer to def __len__, class XYZDataset).
                 if self.training and len(data_dict['gt_boxes']) == 0:
                     new_index = np.random.randint(self.__len__())
                     if self.logger is not None:
                         self.logger.info(f"Sample {data_dict.get('frame_id', 'unknown')} has not gt_boxes. Replacing by new index {new_index}")
                     return self.__getitem__(new_index) # load new sample
                 
-        # "original" dict with Nxaugmented dicts as list
+        # "original" dict with N x augmented dicts as list
         return data_list, applied_augmentors
 
     @staticmethod

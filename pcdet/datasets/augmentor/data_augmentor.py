@@ -711,14 +711,7 @@ class DataAugmentor(object):
                 gt_boxes_mask = temp_dict['gt_boxes_mask']
                 temp_dict['gt_boxes'] = temp_dict['gt_boxes'][gt_boxes_mask]
                 temp_dict['gt_names'] = temp_dict['gt_names'][gt_boxes_mask]
-                
-                # BUG: when deleting gt_boxes, mismatch gt_boxes <-> gt_boxes_mask 
-                # if len(gt_boxes_mask) > temp_dict['gt_boxes'].shape[0]:
-                #     gt_boxes_mask = gt_boxes_mask[:temp_dict['gt_boxes'].shape[0]]
-                #     temp_dict['gt_boxes'] = temp_dict['gt_boxes'][gt_boxes_mask]
-                # if len(gt_boxes_mask) > temp_dict['gt_names'].shape[0]:
-                #     gt_boxes_mask = gt_boxes_mask[:temp_dict['gt_names'].shape[0]]
-                #     temp_dict['gt_names'] = temp_dict['gt_names'][gt_boxes_mask]
+            
                 if 'gt_boxes2d' in temp_dict:
                     temp_dict['gt_boxes2d'] = temp_dict['gt_boxes2d'][gt_boxes_mask]
 

@@ -29,7 +29,7 @@ class DataBaseSampler(object):
 
         self.use_shared_memory = sampler_cfg.get('USE_SHARED_MEMORY', False)
 
-        for db_info_path in sampler_cfg.DB_INFO_PATH: # contains an extracted class (Car,Pedestrian,Cyclist) of gt_database
+        for db_info_path in sampler_cfg.DB_INFO_PATH: # contains an extracted class (Car, Pedestrian, Cyclist) of gt_database
             db_info_path = self.root_path.resolve() / db_info_path
 
             if not db_info_path.exists():
