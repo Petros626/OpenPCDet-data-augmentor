@@ -111,7 +111,7 @@ class ZODDatasetCustom(DatasetTemplate):
         if self.dataset_cfg.get('MAP_MERGED_CLASSES', None) is None:
             return
         
-        #update class names in zod_infos
+        # update class names in zod_infos
         map_merge_class = self.dataset_cfg.MAP_MERGED_CLASSES
         for info in self.zod_infos:
             assert 'annos' in info
@@ -172,6 +172,7 @@ class ZODDatasetCustom(DatasetTemplate):
 
         if self.countries and len(self.countries) > 0:
             candidate_ids = [x for x in all_ids if self.zod_frames[x].metadata.country_code in self.countries]
+
         else:
             candidate_ids = all_ids
 
@@ -353,13 +354,12 @@ class ZODDatasetCustom(DatasetTemplate):
         return truncated # 0: non-truncated, 1: truncated
     
     def get_object_truncation(self, box3d, calib, camera=Camera.FRONT, fov_range=245.0):
-        # TODO: Mit Prof. Lücken besprechen
         """
             4 -------- 5            0 -------- 1         \            /
            /|         /|            |          |          \  Camera  /
-          7 -------- 6 .            |          |           \  FoV   /
+          7 .------- 6 .            |          |           \  FoV   /
           | |   3D   | |    -->     |    BEV   |    -->     \ 120° /
-          . 0 -------- 1            | (Camera) |             \    /
+          . 0 -------. 1            | (Camera) |             \    /
           |/ (LiDAR) |/             |          |              \  /
           3 -------- 2              3 -------- 2               \/
         """
@@ -387,7 +387,7 @@ class ZODDatasetCustom(DatasetTemplate):
         num_points = 200
         angles = np.linspace(-horizontal_fov/2, horizontal_fov/2, num_points) * np.pi / 180 # [-60°...60°]
         fov_points = np.stack([fov_range * np.sin(angles), fov_range * np.cos(angles)], axis=1)
-        fov_polygon = Polygon(np.vstack([[0, 0], fov_points])) # sector
+        fov_polygon = Polygon(np.vstack([[0, 0], fov_points])) # sector in BEV
 
         intersection = box_polygon.intersection(fov_polygon)
         visible_area = intersection.area # A in m²
@@ -403,7 +403,9 @@ class ZODDatasetCustom(DatasetTemplate):
         obj_list = zod_frame.get_annotation(AnnotationProject.OBJECT_DETECTION) # contains all necessary information
 
         # filter out objects without 2d/3d anno
-        obj_list = [obj for obj in obj_list if obj.box2d is not None and obj.box3d is not None] 
+        obj_list = [obj for obj in obj_list if obj.box2d is not None and obj.box3d is not None]
+        # filter out object without 3d anno
+        #obj_list = [obj for obj in obj_list if obj.box3d is not None]  
         # DEBUG print
         #if self.logger is not None:
         #    self.logger.info("filtered out %d objects without 2d anno and 3d anno" % (len(zod_frame.get_annotation(AnnotationProject.OBJECT_DETECTION)) - len(obj_list)))
@@ -418,7 +420,7 @@ class ZODDatasetCustom(DatasetTemplate):
                          (obj.subclass != "VulnerableVehicle_Bicycle" or obj.with_rider == True)] # Vehicle_Car, Pedestrian, VulnerableVehicle_Bicycle (with_rider:True)
         if len(obj_list) == 0:
             return None # skip empty samples
-            
+    
         # calculate truncation and insert occlusion from ZOD
         for obj in obj_list:
             obj.truncation = self.get_object_truncation(obj.box3d, zod_frame.calibration)
@@ -455,7 +457,7 @@ class ZODDatasetCustom(DatasetTemplate):
         return zod_frame.calibration
     
     # Modified version of original get_infos() for pre-processing validation data
-    def get_infos_val(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4, class_names=None):
+    def get_infos_val(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4):
         import concurrent.futures as futures
         import time
 
@@ -634,8 +636,12 @@ class ZODDatasetCustom(DatasetTemplate):
                 annotations['truncated'] = np.array([obj.truncation for obj in obj_list])
                 annotations['occluded'] = np.array([obj.occlusion for obj in obj_list])
                 annotations['alpha'] = np.array([-10.0 for _ in obj_list], dtype=np.float32) # dummy value, not provided
-                # TODO: Prof. Lücken fragen, was wir damit machen.
+
+                # TODO: Prof. Lücken fragen, was wir damit machen. with filtering for 2d box
                 annotations['bbox'] = np.array([obj.box2d.xyxy for obj in obj_list], dtype=np.float32) # xmin, ymin, xmax, ymax
+                # no filtering for 2d box
+                #annotations['bbox'] = np.array([[-1, -1, -1, -1] for _ in obj_list], dtype=np.float32) # # dummy value, not provided
+                
                 annotations['dimensions'] = np.array([obj.box3d.size for obj in obj_list]) # l, w, h (LiDAR) format
                 annotations['location'] = np.array([obj.box3d.center for obj in obj_list]) # x, y, z (LiDAR) format
                 annotations['yaw'] = np.array([obj.box3d.orientation.yaw_pitch_roll[0] for obj in obj_list]) # rotation_z (LiDAR) format, from pyquaternion
@@ -724,6 +730,7 @@ class ZODDatasetCustom(DatasetTemplate):
     def create_groundtruth_database(self, info_path=None, version="full", used_classes=None, split='train'):
         import torch
         from pathlib import Path
+        import time
 
         database_save_path = Path(self.root_path) / ('gt_database_%s_%s' % (split, version) if split == 'train' else ('gt_database_%s_%s' % (split, version)))
         db_info_save_path = Path(self.root_path) / ('zod_dbinfos_%s_%s.pkl' % (split, version))
@@ -758,6 +765,8 @@ class ZODDatasetCustom(DatasetTemplate):
         # Write readme file
         with open(readme_file, 'w') as f:
             f.write(readme_content)
+
+        start_time = time.time()
 
         # For each .bin file
         for k in range(len(infos)):
@@ -801,6 +810,10 @@ class ZODDatasetCustom(DatasetTemplate):
                         all_db_infos[names[i]].append(db_info)
                     else:
                         all_db_infos[names[i]] = [db_info]
+
+        end_time = time.time()
+        print("Total time for creating gt_database: ", end_time - start_time, "s")
+        print("Loading speed for gt_database: ", len(infos) / (end_time - start_time), "sample/s")
 
         # Output the num of all classes in database                
         for k, v in all_db_infos.items():
@@ -854,6 +867,7 @@ class ZODDatasetCustom(DatasetTemplate):
                 fov_flag = self.get_fov_flag(points[:, 0:3], calib) # hor. & ver. FoV filtering in ZOD coordinate system
                 points = points[fov_flag]
             if self.dataset_cfg.VERTICAL_FOV_ONLY:
+                print("VERTICAL_FOV_ONLY")
                 fov_flag = self.get_fov_flag(points[:, 0:3], calib, vertical_only=self.dataset_cfg.VERTICAL_FOV_ONLY, 
                                              use_kitti_fov=self.dataset_cfg.USE_KITTI_FOV) # only vertical FoV filtering in ZOD coordinate system
                 points = points[fov_flag]
@@ -953,10 +967,10 @@ if __name__ == '__main__':
 # TODO: 
 # Mit Professor Lücken über das FoV sprechen. Nehmen wir Kamera (35°) oder LiDAR (26.8°) von KITTI?
 # ZOD -> KITTI
-# C: [120°, 67°] -> [90°, 35°] nur vertical FoV interessant
+# C: [120°, 67°] -> [90°, 35°] nur vertical FoV interessant, da horizontal FoV nach Ansatz wie Complex-YOLO für mehr Informationen beibehalten werden soll.
 # L: [40.0°] -> [26.8°]
 
-# wenn alles passt die ZOD-Daten im KITTI-Format als .txt erstellen (Evaluierung).
+# wenn alles passt die ZOD-Daten im KITTI-Format als .txt erstellen (Evaluierung)?
 
     
     
