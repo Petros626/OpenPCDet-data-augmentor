@@ -296,6 +296,33 @@ def boxes3d_kitti_camera_to_imageboxes(boxes3d, calib, image_shape=None):
 
     return boxes2d_image
 
+def boxes3d_zod_camera_to_imageboxes(boxes3d, calib, image_shape=None):
+    """
+    :param boxes3d: List of ZOD Box3D objects (in camera coords)
+    :param calib: ZOD calibration object
+    :param image_shape: (H, W)
+    :return: (N, 4) [x1, y1, x2, y2]
+    """
+    from zod.utils.geometry import project_3d_to_2d_kannala
+
+    boxes2d_image = []
+    for box3d in boxes3d:
+        corners3d = box3d.corners  # (8, 3) in camera coords
+        pts_img = project_3d_to_2d_kannala(
+            corners3d,
+            calib.cameras[box3d.frame].intrinsics,
+            calib.cameras[box3d.frame].distortion
+        )  # (8, 2)
+        min_uv = np.min(pts_img, axis=0)
+        max_uv = np.max(pts_img, axis=0)
+        boxes2d_image = np.concatenate([min_uv, max_uv])
+        if image_shape is not None:
+            boxes2d_image[:, 0] = np.clip(boxes2d_image[:, 0], a_min=0, a_max=image_shape[1] - 1)
+            boxes2d_image[:, 1] = np.clip(boxes2d_image[:, 1], a_min=0, a_max=image_shape[0] - 1)
+            boxes2d_image[:, 2] = np.clip(boxes2d_image[:, 2], a_min=0, a_max=image_shape[1] - 1)
+            boxes2d_image[:, 3] = np.clip(boxes2d_image[:, 3], a_min=0, a_max=image_shape[0] - 1)
+
+    return np.array(boxes2d_image)
 
 def boxes_iou_normal(boxes_a, boxes_b):
     """

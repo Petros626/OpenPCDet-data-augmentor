@@ -340,7 +340,8 @@ class KittiDatasetCustom(DatasetTemplate):
                     rots = annotations['rotation_y'][:num_objects]
                     loc_lidar = calib.rect_to_lidar(loc)
                     l, h, w = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
-                    loc_lidar[:, 2] += h[:, 0] / 2
+                    # only relevant for KITTI!
+                    loc_lidar[:, 2] += h[:, 0] / 2 # from the box centre to the box bottom edge (floor)
                     gt_boxes_lidar = np.concatenate([loc_lidar, l, w, h, -(np.pi / 2 + rots[..., np.newaxis])], axis=1) # Cam -> LiDAR box
                     annotations['gt_boxes_lidar'] = gt_boxes_lidar
 
@@ -724,8 +725,8 @@ class KittiDatasetCustom(DatasetTemplate):
         if "depth_maps" in get_item_list: # only for the model CaDDN relevant
             input_dict['depth_maps'] = self.get_depth_map(sample_idx)
 
-        if "calib_matricies" in get_item_list: # only for the model CaDDN relevant
-            input_dict["trans_lidar_to_cam"], input_dict["trans_cam_to_img"] = kitti_utils.calib_to_matricies(calib)
+        if "calib_matrices" in get_item_list: # only for the model CaDDN relevant
+            input_dict["trans_lidar_to_cam"], input_dict["trans_cam_to_img"] = kitti_utils.calib_to_matrices(calib)
 
         input_dict['calib'] = calib
         

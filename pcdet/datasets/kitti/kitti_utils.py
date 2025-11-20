@@ -35,6 +35,7 @@ def transform_annotations_to_kitti_format(annos, map_name_to_kitti=None, info_wi
 
             gt_boxes_lidar[:, 2] -= gt_boxes_lidar[:, 5] / 2
             anno['location'] = np.zeros((gt_boxes_lidar.shape[0], 3))
+            # LiDAR to Camera
             anno['location'][:, 0] = -gt_boxes_lidar[:, 1]  # x = -y_lidar
             anno['location'][:, 1] = -gt_boxes_lidar[:, 2]  # y = -z_lidar
             anno['location'][:, 2] = gt_boxes_lidar[:, 0]  # z = x_lidar
@@ -49,9 +50,9 @@ def transform_annotations_to_kitti_format(annos, map_name_to_kitti=None, info_wi
     return annos
 
 
-def calib_to_matricies(calib):
+def calib_to_matrices(calib):
     """
-    Converts calibration object to transformation matricies
+    Converts calibration object to transformation matrices
     Args:
         calib: calibration.Calibration, Calibration object
     Returns

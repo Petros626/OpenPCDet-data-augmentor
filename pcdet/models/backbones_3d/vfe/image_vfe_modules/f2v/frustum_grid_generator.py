@@ -89,7 +89,7 @@ class FrustumGridGenerator(nn.Module):
         """
         B = lidar_to_cam.shape[0]
 
-        # Create transformation matricies
+        # Create transformation matrices
         V_G = grid_to_lidar  # Voxel Grid -> LiDAR (4, 4)
         C_V = lidar_to_cam  # LiDAR -> Camera (B, 4, 4)
         I_C = cam_to_img  # Camera -> Image (B, 3, 4)
