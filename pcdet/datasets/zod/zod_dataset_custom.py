@@ -402,6 +402,14 @@ class ZODDatasetCustom(DatasetTemplate):
         zod_frame = self.zod_frames[idx]
         obj_list = zod_frame.get_annotation(AnnotationProject.OBJECT_DETECTION) # contains all necessary information
 
+        # NOTE: Objects visible both in the camera image and the LiDAR
+        # point cloud are also labeled with a 9-DOF 3D bounding box,
+        # described by the coordinate of the center of the box, length,
+        # width, height size, and the four quaternion rotation parameters
+        # of the cuboid (i.e., qw, qx, qy, and qz).
+        # -> filtering after box2d and box3d may result in some annotations outside the camera FoV, but visible in LiDAR (less annos)
+        # -> filtering after box3d only may result in more annotations, bc visible in LiDAR.
+
         # filter out objects without 2d/3d anno
         obj_list = [obj for obj in obj_list if obj.box2d is not None and obj.box3d is not None]
         # filter out object without 3d anno
@@ -436,7 +444,7 @@ class ZODDatasetCustom(DatasetTemplate):
             obj.level = object3d_zod.get_zod_obj_level(obj)
 
         # TODO: future implementation for alpha, source: https://github.com/AlejandroBarrera/birdnet2/blob/5ceed811b289796d7d7420a064ecb079c80801ab/tools/val_net_BirdNetPlus.py 
-        
+
         # Project points to camera frame coordinates
         # calib = Calibration(calib_file)
         # p = calib.project_velo_to_rect(np.array([[obj3d.location.x,obj3d.location.y,obj3d.location.z]]))
@@ -513,7 +521,8 @@ class ZODDatasetCustom(DatasetTemplate):
                     
                     annotations['truncated'] = np.array([obj.truncation for obj in obj_list])
                     annotations['occluded'] = np.array([obj.occlusion for obj in obj_list])
-                    annotations['alpha'] = np.array([-10.0 for _ in obj_list], dtype=np.float32) # dummy value, not provided
+                    # calculated below
+                    #annotations['alpha'] = np.array([-10.0 for _ in obj_list], dtype=np.float32) # dummy value, not provided
                     annotations['bbox'] = np.array([obj.box2d.xyxy for obj in obj_list], dtype=np.float32) # xmin, ymin, xmax, ymax
                     annotations['dimensions'] = np.array([obj.box3d.size for obj in obj_list]) # l, w, h (LiDAR) format
                     annotations['location'] = np.array([obj.box3d.center for obj in obj_list]) # x, y, z (LiDAR) format
@@ -539,6 +548,16 @@ class ZODDatasetCustom(DatasetTemplate):
                     l, w, h = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
                     gt_boxes_lidar = np.concatenate([loc, l, w, h, rots[..., np.newaxis]], axis=1)
                     annotations['gt_boxes_lidar'] = gt_boxes_lidar
+
+                    # calculate observation angle alpha
+                    gt_boxes_lidar = annotations['gt_boxes_lidar'].copy()
+                    # only relevant for model predictions and KITTI
+                    #gt_boxes_lidar[:, 2] -= gt_boxes_lidar[:, 5] / 2 
+                    annotations['location'][:, 0] = -gt_boxes_lidar[:, 1]  # cam_x = -y_lidar
+                    annotations['location'][:, 1] = -gt_boxes_lidar[:, 2]  # cam_y = -z_lidar
+                    annotations['location'][:, 2] = gt_boxes_lidar[:, 0]  # cam_z = x_lidar
+                    rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # rotation camera frame
+                    annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y
 
                     info['annos'] = annotations
 
@@ -635,7 +654,8 @@ class ZODDatasetCustom(DatasetTemplate):
                 annotations['name'] = np.array([obj.subclass for obj in obj_list])
                 annotations['truncated'] = np.array([obj.truncation for obj in obj_list])
                 annotations['occluded'] = np.array([obj.occlusion for obj in obj_list])
-                annotations['alpha'] = np.array([-10.0 for _ in obj_list], dtype=np.float32) # dummy value, not provided
+                # calculated below
+                #annotations['alpha'] = np.array([-10.0 for _ in obj_list], dtype=np.float32) # dummy value, not provided
 
                 # TODO: Prof. Lücken fragen, was wir damit machen. with filtering for 2d box
                 annotations['bbox'] = np.array([obj.box2d.xyxy for obj in obj_list], dtype=np.float32) # xmin, ymin, xmax, ymax
@@ -691,6 +711,16 @@ class ZODDatasetCustom(DatasetTemplate):
                 l, w, h = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
                 gt_boxes_lidar = np.concatenate([loc, l, w, h, rots[..., np.newaxis]], axis=1)
                 annotations['gt_boxes_lidar'] = gt_boxes_lidar
+
+                # calculate observation angle alpha
+                gt_boxes_lidar = annotations['gt_boxes_lidar'].copy()
+                # only relevant for model predictions and KITTI
+                #gt_boxes_lidar[:, 2] -= gt_boxes_lidar[:, 5] / 2 
+                annotations['location'][:, 0] = -gt_boxes_lidar[:, 1]  # cam_x = -y_lidar
+                annotations['location'][:, 1] = -gt_boxes_lidar[:, 2]  # cam_y = -z_lidar
+                annotations['location'][:, 2] = gt_boxes_lidar[:, 0]  # cam_z = x_lidar
+                rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # rotation camera frame
+                annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y
 
                 info['annos'] = annotations
 
@@ -822,6 +852,91 @@ class ZODDatasetCustom(DatasetTemplate):
         with open(db_info_save_path, 'wb') as f:
             pickle.dump(all_db_infos, f)
             print('ZODDatasetCustom: zod db info file is saved to %s' % db_info_save_path)
+
+    @staticmethod
+    def generate_prediction_dicts(batch_dict, pred_dicts, class_names, output_path=None):
+        """
+        Args:
+            batch_dict:
+                frame_id:
+            pred_dicts: list of pred_dicts
+                pred_boxes: (N, 7), Tensor
+                pred_scores: (N), Tensor
+                pred_labels: (N), Tensor
+            class_names:
+            output_path:
+
+        Returns:
+
+        """
+        def get_template_prediction(num_samples):
+            ret_dict = {
+                'name': np.zeros(num_samples), 'truncated': np.zeros(num_samples),
+                'occluded': np.zeros(num_samples), 'alpha': np.zeros(num_samples),
+                'bbox': np.zeros([num_samples, 4]), 'dimensions': np.zeros([num_samples, 3]),
+                'location': np.zeros([num_samples, 3]), 'rotation_y': np.zeros(num_samples),
+                'score': np.zeros(num_samples)
+            }
+            return ret_dict
+
+        def generate_single_sample_dict(batch_index, box_dict):
+            pred_scores = box_dict['pred_scores'].cpu().numpy()
+            pred_boxes = box_dict['pred_boxes'].cpu().numpy()
+            pred_labels = box_dict['pred_labels'].cpu().numpy()
+            pred_dict = get_template_prediction(pred_scores.shape[0])
+            if pred_scores.shape[0] == 0:
+                return pred_dict
+
+            calib = batch_dict['calib'][batch_index]
+            image_shape = batch_dict['image_shape'][batch_index].cpu().numpy()
+            # check before use!
+            camera=Camera.FRONT
+            pred_boxes_camera = pred_boxes.copy()
+            pred_boxes_camera.convert_to(camera, calib) # box3d LiDAR --> box3d camera
+            pred_boxes_img = box_utils.boxes3d_zod_camera_to_imageboxes(
+                pred_boxes_camera, calib, image_shape=image_shape
+
+            )
+            # only for KITTI!
+            #pred_boxes_camera = box_utils.boxes3d_lidar_to_kitti_camera(pred_boxes, calib)
+            #pred_boxes_img = box_utils.boxes3d_kitti_camera_to_imageboxes(
+            #    pred_boxes_camera, calib, image_shape=image_shape
+            #)
+
+            pred_dict['name'] = np.array(class_names)[pred_labels - 1]
+            pred_dict['alpha'] = -np.arctan2(-pred_boxes[:, 1], pred_boxes[:, 0]) + pred_boxes_camera[:, 6]
+            pred_dict['bbox'] = pred_boxes_img
+            pred_dict['dimensions'] = pred_boxes_camera[:, 3:6]
+            pred_dict['location'] = pred_boxes_camera[:, 0:3]
+            pred_dict['rotation_y'] = pred_boxes_camera[:, 6]
+            pred_dict['score'] = pred_scores
+
+            return pred_dict
+
+        annos = []
+        for index, box_dict in enumerate(pred_dicts):
+            frame_id = batch_dict['frame_id'][index]
+
+            single_pred_dict = generate_single_sample_dict(index, box_dict)
+            single_pred_dict['frame_id'] = frame_id
+            annos.append(single_pred_dict)
+
+            if output_path is not None:
+                cur_det_file = output_path / ('%s.txt' % frame_id)
+                with open(cur_det_file, 'w') as f:
+                    bbox = single_pred_dict['bbox']
+                    loc = single_pred_dict['location']
+                    dims = single_pred_dict['dimensions'] # lhw (LiDAR) -> hwl (Camera)
+
+                    for idx in range(len(bbox)):
+                        print('%s -1 -1 %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f'
+                              % (single_pred_dict['name'][idx], single_pred_dict['alpha'][idx],
+                                 bbox[idx][0], bbox[idx][1], bbox[idx][2], bbox[idx][3],
+                                 dims[idx][1], dims[idx][2], dims[idx][0], loc[idx][0],
+                                 loc[idx][1], loc[idx][2], single_pred_dict['rotation_y'][idx],
+                                 single_pred_dict['score'][idx]), file=f)
+
+        return annos
 
     def __len__(self):
         if self._merge_all_iters_to_one_epoch:
