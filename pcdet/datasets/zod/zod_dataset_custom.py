@@ -556,8 +556,10 @@ class ZODDatasetCustom(DatasetTemplate):
                     annotations['location'][:, 0] = -gt_boxes_lidar[:, 1]  # cam_x = -y_lidar
                     annotations['location'][:, 1] = -gt_boxes_lidar[:, 2]  # cam_y = -z_lidar
                     annotations['location'][:, 2] = gt_boxes_lidar[:, 0]  # cam_z = x_lidar
-                    rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # rotation camera frame
-                    annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y
+                    rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # orientation object
+                    annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y # angle betw. cam & obj. centre
+                    # limit alpha for mathematical correctness
+                    annotations['alpha'] = common_utils.limit_period(annotations['alpha'], offset=0.5, period=2 * np.pi) # [-pi, pi]
 
                     info['annos'] = annotations
 
@@ -713,14 +715,40 @@ class ZODDatasetCustom(DatasetTemplate):
                 annotations['gt_boxes_lidar'] = gt_boxes_lidar
 
                 # calculate observation angle alpha
+                """
+                 ^ θl    ^ θ              
+                  \     /
+                 __\___/_ 
+                |   \ /--|--------> 
+                |____\___|
+                object\     
+                       \
+                        \
+                         \
+                          \
+                           \
+                            \  
+                             \ 
+                             _\___ θray
+                             \ \ /-------->
+                              \ /
+                            Camera
+
+                θ: global orientation of a car
+                θl: local orientiation
+                θray: angle between camera view and object centre
+                α = θ - θray
+                """
                 gt_boxes_lidar = annotations['gt_boxes_lidar'].copy()
                 # only relevant for model predictions and KITTI
                 #gt_boxes_lidar[:, 2] -= gt_boxes_lidar[:, 5] / 2 
                 annotations['location'][:, 0] = -gt_boxes_lidar[:, 1]  # cam_x = -y_lidar
                 annotations['location'][:, 1] = -gt_boxes_lidar[:, 2]  # cam_y = -z_lidar
                 annotations['location'][:, 2] = gt_boxes_lidar[:, 0]  # cam_z = x_lidar
-                rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # rotation camera frame
-                annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y
+                rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # orientation object
+                annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y # angle betw. cam & obj. centre
+                # limit alpha for mathematical correctness
+                annotations['alpha'] = common_utils.limit_period(annotations['alpha'], offset=0.5, period=2 * np.pi) # [-pi, pi]
 
                 info['annos'] = annotations
 
@@ -982,7 +1010,6 @@ class ZODDatasetCustom(DatasetTemplate):
                 fov_flag = self.get_fov_flag(points[:, 0:3], calib) # hor. & ver. FoV filtering in ZOD coordinate system
                 points = points[fov_flag]
             if self.dataset_cfg.VERTICAL_FOV_ONLY:
-                print("VERTICAL_FOV_ONLY")
                 fov_flag = self.get_fov_flag(points[:, 0:3], calib, vertical_only=self.dataset_cfg.VERTICAL_FOV_ONLY, 
                                              use_kitti_fov=self.dataset_cfg.USE_KITTI_FOV) # only vertical FoV filtering in ZOD coordinate system
                 points = points[fov_flag]
