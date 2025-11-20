@@ -457,8 +457,8 @@ class CustomDataset(DatasetTemplate):
         if "depth_maps" in get_item_list:
             input_dict['depth_maps'] = self.get_depth_map(sample_idx)
 
-        if "calib_matricies" in get_item_list:
-            input_dict["trans_lidar_to_cam"], input_dict["trans_cam_to_img"] = kitti_utils.calib_to_matricies(calib)
+        if "calib_matrices" in get_item_list:
+            input_dict["trans_lidar_to_cam"], input_dict["trans_cam_to_img"] = kitti_utils.calib_to_matrices(calib)
 
         input_dict['calib'] = calib
 
