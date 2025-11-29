@@ -241,38 +241,43 @@ class DataAugmentor(object):
 
         return data_dict
     
-    def get_polar_image(self, points):
+    def get_polar_image(self, points, with_limit_range=False):
         # source: https://github.com/griesbchr/3DTrans/blob/master/pcdet/utils/downsample_utils.py
-        theta, phi = sampling_utils.compute_angles(points[:,:3])
+        if with_limit_range:
+            theta, phi = sampling_utils.compute_angles(points[:, :3])
+        else:
+            theta, phi = sampling_utils.compute_angles_wo_range(points[:, :3])
+
         r = np.sqrt(np.sum(points[:,:3]**2, axis=1))
         polar_image = points.copy()
-        polar_image[:,0] = phi 
-        polar_image[:,1] = theta
+        polar_image[:,0] = phi # Azimuth
+        polar_image[:,1] = theta # Elevation
         polar_image[:,2] = r 
+
         return polar_image
 
-    def random_beam_upsample_griesbacher(self, data_dict=None, config=None):
+    def random_beam_re_sampling(self, data_dict=None, config=None):
         # source: https://github.com/griesbchr/3DTrans/blob/3174699105aefb3ed11e524606f707fd91239850/pcdet/datasets/augmentor/data_augmentor.py#L147
 
         if data_dict is None:
-            return partial(self.random_beam_upsample_griesbacher, config=config)
+            return partial(self.random_beam_re_sampling, config=config)
         
         # get num_interp_beams, 1 is default if not in cfg
         num_interp_beams = config.get('NUM_INTERP_BEAMS', 1)
 
-        points_with_beam_labels = data_dict['points']
-        beam_label = points_with_beam_labels[:, -1].astype(int)
+        points_with_beam_labels = data_dict['points'] # must be [x, y, z, intensity, beam_label]
+        beam_label = points_with_beam_labels[:, -1].astype(int) # beam_label
         points = points_with_beam_labels[:, :-1]
 
-        polar_image = self.get_polar_image(points)
+        polar_image = self.get_polar_image(points, with_limit_range=False)
         phi = polar_image[:, 0]
 
         new_pcs = [points]
 
         # get upsample propability 
         beam_upsample_prob = config.get('BEAM_UPSAMPLE_PROB', 1)
-
-        for i in range(data_dict['num_aug_beams'] - 1):
+    
+        for i in range(data_dict['num_aug_beams'] - 1): # 64 beams
             if np.random.rand() > beam_upsample_prob:
                 continue
             curr_beam_mask = (beam_label == i)
@@ -302,17 +307,16 @@ class DataAugmentor(object):
                 new_pc[:,2] = np.sin(new_beam[:,1]) * new_beam[:,2]
 
                 new_pcs.append(new_pc)
-        
+
         data_dict['points'] = np.concatenate(new_pcs, 0)
 
         return data_dict
 
+    # source: LiDAR-BEVMTN: Real-Time LiDAR Bird's-Eye View Multi-Task Perception Network for Autonomous Driving
     def range_based_densification(self, data_dict=None, config=None):
         if data_dict is None:
                 return partial(self.range_based_densification, config=config)
-
-        points = data_dict['points']
-
+        
         points = data_dict['points']
         num_point_copies = config.get('NUM_POINT_COPIES', 1)
         delta_r_range = config.get('DELTA_R_RANGE', [0.1, 0.3])
