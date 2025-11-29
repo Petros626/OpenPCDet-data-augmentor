@@ -418,7 +418,7 @@ class DataBaseSampler(object):
 
             obj_points_list.append(obj_points)
 
-        obj_points = np.concatenate(obj_points_list, axis=0)
+        obj_points = np.concatenate(obj_points_list, axis=0) # from gt_database
         sampled_gt_names = np.array([x['name'] for x in total_valid_sampled_dict])
 
         if self.sampler_cfg.get('FILTER_OBJ_POINTS_BY_TIMESTAMP', False) or obj_points.shape[-1] != points.shape[-1]:
