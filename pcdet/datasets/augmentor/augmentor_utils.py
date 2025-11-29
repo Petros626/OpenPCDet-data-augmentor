@@ -731,7 +731,7 @@ def local_pyramid_swap(gt_boxes, points, prob, max_num_pts, pyramids=None):
             points = np.concatenate([remain_points, points_res], axis=0)
     return gt_boxes, points
 
-def densify_points_along_range(points, num_point_copies=1, delta_r_range=(0.1, 0.3)):
+def densify_points_along_range(points, num_point_copies=1, delta_r_range=(0.1, 0.2)):
     """
     Args:
         points: (N, 3 + C) numpy array
@@ -741,20 +741,20 @@ def densify_points_along_range(points, num_point_copies=1, delta_r_range=(0.1, 0
         (N * num_copies, 3 + C) new points
     """
     xyz = points[:, :3]
-    rest = points[:, 3:] if points.shape > 3 else None # intensity, diode_idx, timestamp etc.
+    rest = points[:, 3:] if points.shape[1] > 3 else None # intensity, diode_idx, timestamp etc.
 
     r = np.linalg.norm(xyz, axis=1) # range (r)
     theta = np.arcsin(xyz[:, 2] / r) # elevation angle (θ)        
-    phi = np.arctan2(xyz[:, 1] / xyz[:, 0]) # azimuth angle (ϕ)
+    phi = np.arctan2(xyz[:, 1],  xyz[:, 0]) # azimuth angle (ϕ)
 
     new_points = [] 
 
     for i in range(num_point_copies):
         delta_r = np.random.uniform(delta_r_range[0], delta_r_range[1], size=r.shape)
-        r_new = r + delta_r
-        x_new = r_new * np.cos(theta) * np.cos(phi)
-        y_new = r_new * np.cos(theta) * np.sin(phi)
-        z_new = r_new * np.sin(theta)
+        r_new = r + delta_r # (r + Δr)
+        x_new = r_new * np.cos(theta) * np.cos(phi) # (r + Δr) cos θ sin φ
+        y_new = r_new * np.cos(theta) * np.sin(phi) # (r + Δr) cos θ  sin φ
+        z_new = r_new * np.sin(theta) # (r + Δr) sin θ
         xyz_new = np.stack([x_new, y_new, z_new], axis=1)
 
         if rest is not None:
