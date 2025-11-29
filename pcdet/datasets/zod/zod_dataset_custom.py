@@ -237,7 +237,7 @@ class ZODDatasetCustom(DatasetTemplate):
             zod_frames_files = self.zod_frames[idx]
             lidar_core_frame = zod_frames_files.info.get_key_lidar_frame()
             pc = lidar_core_frame.read()
-            # filter LiDAR source to contain only VLS128
+            # filter LiDAR source to contain only VLS128, not LiDAR beams fron the 2x VLP-16
             if self.dataset_cfg.get('USE_VLS128_ONLY', False): 
                 vls128_mask = pc.diode_idx < 128
                 pc.points = pc.points[vls128_mask]
@@ -443,7 +443,7 @@ class ZODDatasetCustom(DatasetTemplate):
                     # other (e.g. unknown) → KITTI 3 (unknown)
             obj.level = object3d_zod.get_zod_obj_level(obj)
 
-        # TODO: future implementation for alpha, source: https://github.com/AlejandroBarrera/birdnet2/blob/5ceed811b289796d7d7420a064ecb079c80801ab/tools/val_net_BirdNetPlus.py 
+        # alternative future implementation for alpha, source: https://github.com/AlejandroBarrera/birdnet2/blob/5ceed811b289796d7d7420a064ecb079c80801ab/tools/val_net_BirdNetPlus.py 
 
         # Project points to camera frame coordinates
         # calib = Calibration(calib_file)
@@ -659,7 +659,6 @@ class ZODDatasetCustom(DatasetTemplate):
                 # calculated below
                 #annotations['alpha'] = np.array([-10.0 for _ in obj_list], dtype=np.float32) # dummy value, not provided
 
-                # TODO: Prof. Lücken fragen, was wir damit machen. with filtering for 2d box
                 annotations['bbox'] = np.array([obj.box2d.xyxy for obj in obj_list], dtype=np.float32) # xmin, ymin, xmax, ymax
                 # no filtering for 2d box
                 #annotations['bbox'] = np.array([[-1, -1, -1, -1] for _ in obj_list], dtype=np.float32) # # dummy value, not provided

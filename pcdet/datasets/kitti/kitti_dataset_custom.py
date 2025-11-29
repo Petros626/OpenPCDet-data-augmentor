@@ -33,14 +33,8 @@ class KittiDatasetCustom(DatasetTemplate):
         self.dataset_w_all_infos = [] # new list for custom augmented training dataset
         self.kitti_infos = []
 
-        # new
-        self.set_beam_labels_hdl64e()
-
-        self.enable_beam_upsample = self.dataset_cfg.get('ENABLE_BEAM_UPSAMPLE', False)
-        self.beam_upsample_factor = self.dataset_cfg.get('BEAM_UPSAMPLE_FACTOR', None)
-        if self.enable_beam_upsample and self.logger is not None:
-            self.logger.info('Beam upsample enabled with factor %d' % self.beam_upsample_factor)
-        # new
+        # should be used like in the source, but for HDL-64E (KITTI) we need another approach
+        #self.set_beam_labels_hdl64e()
 
         self.include_kitti_data(self.mode)
        
@@ -75,68 +69,52 @@ class KittiDatasetCustom(DatasetTemplate):
         split_dir = self.root_path / 'ImageSets' / (self.split + '.txt')
         self.sample_id_list = [x.strip() for x in open(split_dir).readlines()] if split_dir.exists() else None
 
-    # new
-    def set_beam_labels_hdl64e(self):
-        # Source: https://github.com/griesbchr/3DTrans/blob/3174699105aefb3ed11e524606f707fd91239850/pcdet/datasets/zod/zod_dataset.py#L93
-        from collections import defaultdict
+    # only relevant when pc data contain the diode_idx by default
+    # def set_beam_labels_hdl64e(self):
+    #     # Source: https://github.com/griesbchr/3DTrans/blob/3174699105aefb3ed11e524606f707fd91239850/pcdet/datasets/zod/zod_dataset.py#L93
+    #     from collections import defaultdict
 
-        diode_indices_blocked = [
-        [0,  32, 1,  33],
-        [2,  34, 3,  35],
-        [4,  36, 5,  37],
-        [6,  38, 7,  39],
-        [8,  40, 9,  41],
-        [10, 42, 11, 43],
-        [12, 44, 13, 45],
-        [14, 46, 15, 47],
-        [16, 48, 17, 49],
-        [18, 50, 19, 51],
-        [20, 52, 21, 53],
-        [22, 54, 23, 55],
-        [24, 56, 25, 57],
-        [26, 58, 27, 59],
-        [28, 60, 29, 61],
-        [30, 62, 31, 63]
-        ] # 64
+    #     # Source: https://www.termocam.it/pdf/manuale-HDL-64E.pdf
+    #     # [Upper, Lower, Upper, Lower] 
+    #     diode_indices_blocked = [
+    #     [0,  32, 1,  33],
+    #     [2,  34, 3,  35],
+    #     [4,  36, 5,  37],
+    #     [6,  38, 7,  39],
+    #     [8,  40, 9,  41],
+    #     [10, 42, 11, 43],
+    #     [12, 44, 13, 45],
+    #     [14, 46, 15, 47],
+    #     [16, 48, 17, 49],
+    #     [18, 50, 19, 51],
+    #     [20, 52, 21, 53],
+    #     [22, 54, 23, 55],
+    #     [24, 56, 25, 57],
+    #     [26, 58, 27, 59],
+    #     [28, 60, 29, 61],
+    #     [30, 62, 31, 63]
+    #     ] # 64
 
-        ignore_blocks = []      # leave out blocks that are less dense
+    #     ignore_blocks = [] # leave out blocks that are less dense
 
-        # concat all diode indices but the ones in ignore_blocks
-        diode_indices = np.concatenate([diode_indices for i, diode_indices in enumerate(diode_indices_blocked) if i not in ignore_blocks])
+    #     # concat all diode indices but the ones in ignore_blocks
+    #     diode_indices = np.concatenate([diode_indices for i, diode_indices in enumerate(diode_indices_blocked) if i not in ignore_blocks])
 
-        # create a map that maps diode indices to a strictly increasing index for convenient sampling
-        self.beam_map = defaultdict(lambda : -1)
-        for i, diode_index in enumerate(diode_indices):
-            self.beam_map[diode_index] = i
+    #     # create a map that maps diode indices to a strictly increasing index for convenient sampling
+    #     self.beam_map = defaultdict(lambda : -1)
+    #     for i, diode_index in enumerate(diode_indices):
+    #         self.beam_map[diode_index] = i
         
-        # vectorize for easier mapping of numpy arrays
-        self.beam_label_mapper = np.vectorize(self.beam_map.__getitem__)
+    #     # vectorize for easier mapping of numpy arrays
+    #     self.beam_label_mapper = np.vectorize(self.beam_map.__getitem__)
 
-        self.num_aug_beams = len(diode_indices)
+    #     self.num_aug_beams = len(diode_indices)
 
-        # some assertions to make sure the mapping is correct
-        assert 0 in self.beam_map.values(), "beam_map should start with 0"
-        assert self.num_aug_beams == len(self.beam_map.keys()) or self.num_aug_beams == len(self.beam_map.keys()) + 1
-        assert self.num_aug_beams - 1 == sorted(list(self.beam_map.values()))[-1], "beam_map should be strictly increasing"
-        assert self.num_aug_beams not in list(self.beam_map.values()), "beam_map should not have any gaps"
-
-    # new
-    def assign_diode_idx(points, num_beams=64):
-        """
-        Assigns a beam index to each point based on the elevation angle.
-        """
-        x, y, z = points[:, 0], points[:, 1], points[:, 2]
-        r = np.sqrt(x**2 + y**2 + z**2)
-        theta = np.arcsin(z / r) # elevation angle
-
-        # HDL-64E: elevation of ca. -24.8° to +2° (see data sheet)
-        min_theta = np.deg2rad(-24.8)
-        max_theta = np.deg2rad(2.0)
-        diode_idx = ((theta - min_theta) / (max_theta - min_theta) * (num_beams - 1)).round().astype(int)
-        diode_idx = np.clip(diode_idx, 0, num_beams - 1) # starts at 0
-         
-        return diode_idx
-    # new
+    #     # some assertions to make sure the mapping is correct
+    #     assert 0 in self.beam_map.values(), "beam_map should start with 0"
+    #     assert self.num_aug_beams == len(self.beam_map.keys()) or self.num_aug_beams == len(self.beam_map.keys()) + 1
+    #     assert self.num_aug_beams - 1 == sorted(list(self.beam_map.values()))[-1], "beam_map should be strictly increasing"
+    #     assert self.num_aug_beams not in list(self.beam_map.values()), "beam_map should not have any gaps"
 
     def get_lidar(self, idx, with_beam_label=False):
         """
@@ -150,32 +128,21 @@ class KittiDatasetCustom(DatasetTemplate):
         assert lidar_file.exists()
         points = np.fromfile(str(lidar_file), dtype=np.float32).reshape(-1, 4)
 
-        # new
-        if with_beam_label or self.enable_beam_upsample:
-            diode_idx = self.assign_diode_idx(points, num_beams=64) # 0-63
-
         if with_beam_label:
-            # append calculate diode_idx to points
-            # diode index starts at 0, what we actually want
-            # (ZOD: diode index actually starts at 1, but we want to start at 0)
-            beam_labels = self.beam_label_mapper(diode_idx) # 0-63
+        
+            # append calculated beam_labels (see kitti_beam_id.py) to the point cloud data
+            beam_labels = self.get_beam_labels(idx)
 
             # concat points and beam labels
             points = np.concatenate((points, beam_labels.reshape(-1, 1)), axis=1)
 
-        if self.enable_beam_upsample:
-            # determine which beams to keep
-            beam_mask = np.arange(self.num_aug_beams) % self.dataset_cfg.BEAM_UPSAMPLE_FACTOR == 0
-        
-            # always keep points with beam_label == -1
-            beam_mask = np.append(beam_mask, True) 
-            
-            beam_labels = self.beam_label_mapper(diode_idx)
-            points_mask = beam_mask[beam_labels]
-            points = points[points_mask] 
-        # new
-
         return points
+    
+    # source: https://github.com/WoodwindHu/DTS/blob/4aad1962ccf39dec611a608696b6309e0fbc237a/pcdet/datasets/kitti/kitti_dataset.py#L68
+    def get_beam_labels(self, idx):
+        lidar_file = self.root_split_path / 'beam_labels' / ('%s_beam_label.bin' % idx)
+        assert lidar_file.exists()
+        return np.fromfile(str(lidar_file), dtype=np.float32).astype(np.int32)
     
     def get_image(self, idx):
         """
@@ -279,8 +246,9 @@ class KittiDatasetCustom(DatasetTemplate):
         return pts_valid_flag
     
     # Modified version of original get_infos() for pre-processing validation data
-    def get_infos_val(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4, class_names=None, fov_points_only=False):
+    def get_infos_val(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4, class_names=None, fov_points_only=False, with_beam_label=False):
         import concurrent.futures as futures
+        import time
 
         if self.mode == 'test': # validation mode
             from pcdet.datasets.processor.point_feature_encoder import PointFeatureEncoder
@@ -327,7 +295,7 @@ class KittiDatasetCustom(DatasetTemplate):
                     annotations['location'] = np.concatenate([obj.loc.reshape(1, 3) for obj in filtered_obj_list], axis=0) # x,y,z (camera) format
                     annotations['rotation_y'] = np.array([obj.ry for obj in filtered_obj_list]) # rotation y-axis (camera) format
                     annotations['score'] = np.array([obj.score for obj in filtered_obj_list]) # confidence in detection
-                    annotations['difficulty'] = np.array([obj.level for obj in filtered_obj_list], np.int32)
+                    #annotations['difficulty'] = np.array([obj.level for obj in filtered_obj_list], np.int32) # not needed
                  
                     # Custom change: only allowed_classes object classes in the label are counted
                     num_objects = len(filtered_obj_list)
@@ -348,7 +316,13 @@ class KittiDatasetCustom(DatasetTemplate):
                     info['annos'] = annotations
 
                     if count_inside_pts:
-                        points = self.get_lidar(sample_idx)
+                        if self.dataset_cfg.get('INCLUDE_DIODE_IDS', False):
+                            points = self.get_lidar(sample_idx, with_beam_label=with_beam_label)
+                            beam_label = points[:, -1].astype(int) # get beam_label
+                            num_aug_beams = len(np.unique(beam_label)) # 64
+                            info.update({"num_aug_beams": num_aug_beams})
+                        else:
+                            points = self.get_lidar(sample_idx)
                         calib = self.get_calib(sample_idx)
                         pts_rect = calib.lidar_to_rect(points[:, 0:3])
                         fov_flag = self.get_fov_flag(pts_rect, info['image']['image_shape'], calib)
@@ -359,7 +333,7 @@ class KittiDatasetCustom(DatasetTemplate):
                             # Use this, when you want FoV
                             info['points'] = pts_fov
                         else:
-                            # all points in fron of data origin, limited later (see l. 301)
+                            # all points in front of data origin, limited later (see l. 301)
                             info['points'] = points 
 
                         corners_lidar = box_utils.boxes_to_corners_3d(gt_boxes_lidar)
@@ -379,12 +353,19 @@ class KittiDatasetCustom(DatasetTemplate):
         sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
 
         if self.mode == 'test': # val mode
+            start_time = time.time()
             with futures.ThreadPoolExecutor(num_workers) as executor:
                 infos = executor.map(process_single_scene_val, sample_id_list)
+
+            end_time = time.time()
+            print("Total time for loading infos: ", end_time - start_time, "s")
+            print("Loading speed for infos: ", len(sample_id_list) / (end_time - start_time), "sample/s")
+
             return list(infos)
 
     def get_infos(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4):
         import concurrent.futures as futures
+        import time
             
         def process_single_scene(sample_idx):
             print('KittiDatasetCustom: %s sample_idx: %s' % (self.split, sample_idx))
@@ -403,6 +384,20 @@ class KittiDatasetCustom(DatasetTemplate):
             R0_4x4[:3, :3] = calib.R0
             V2C_4x4 = np.concatenate([calib.V2C, np.array([[0., 0., 0., 1.]])], axis=0)
             calib_info = {'P2': P2, 'R0_rect': R0_4x4, 'Tr_velo_to_cam': V2C_4x4}
+            """ 
+            Calibration file explained:
+            P0, P1, P2, P3:
+            These matrices are the projection matrices for various cameras. 
+            They transform 3D (LiDAR) world coordinates into 2D(Camera) image coordinates.
+            R0_rect:
+            This is the rectification matrix used to bring all camera images onto a common plane. 
+            It is therefore used to align the camera data correctly.
+            Tr_velo_to_cam:
+            This matrix is the transformation matrix that translates the coordinates from LiDAR to 
+            the camera coordinate system.
+            Tr_imu_to_velo:
+            This matrix describes the transformation of IMU coordinates into the LiDAR coordinate system. 
+            """
             
             info['calib'] = calib_info
 
@@ -458,9 +453,15 @@ class KittiDatasetCustom(DatasetTemplate):
        
         sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
 
+        start_time = time.time()
         # improve the velocity
         with futures.ThreadPoolExecutor(num_workers) as executor:
             infos = executor.map(process_single_scene, sample_id_list)
+        
+        end_time = time.time()
+        print("Total time for loading infos: ", end_time - start_time, "s")
+        print("Loading speed for infos: ", len(sample_id_list) / (end_time - start_time), "sample/s")
+
         return list(infos)
     
     # Modified version of original create_groundtruth_database() for gt database
@@ -649,7 +650,6 @@ class KittiDatasetCustom(DatasetTemplate):
 
         return len(self.kitti_infos)
     
-
     def __getitem__(self, index):
         # index = 4
         if self._merge_all_iters_to_one_epoch:
@@ -685,6 +685,7 @@ class KittiDatasetCustom(DatasetTemplate):
                 'gt_names': gt_names,
                 'gt_boxes': gt_boxes_lidar
             })
+
             if "gt_boxes2d" in get_item_list: # only for the model CaDDN relevant
                 input_dict['gt_boxes2d'] = annos["bbox"]
 
@@ -693,29 +694,42 @@ class KittiDatasetCustom(DatasetTemplate):
             if road_plane is not None:
                 input_dict['road_plane'] = road_plane
 
+            input_dict['cam_info'] = {
+                'truncated': annos['truncated'],
+                'occluded': annos['occluded'],
+                'alpha': annos['alpha'],
+                'bbox': annos['bbox'],
+                'dimensions': annos['dimensions'],
+                'location': annos['location'],
+                'rotation_y': annos['rotation_y'],
+                'score': annos['score'],
+                'image_shape': img_shape
+            }
+
         if "points" in get_item_list:
-            points = self.get_lidar(sample_idx,  with_beam_label=self.dataset_cfg.get('WITH_BEAM_LABEL', False))
+
+            if self.dataset_cfg.get('INCLUDE_DIODE_IDS', False):
+                points = self.get_lidar(sample_idx, with_beam_label=True)
+                beam_label = points[:, -1].astype(int)  # get beam_label
+                num_aug_beams = len(np.unique(beam_label))  # 64
+                input_dict.update({
+                    "num_aug_beams": num_aug_beams
+                })
+            else:
+                points = self.get_lidar(sample_idx)
 
             if self.dataset_cfg.FOV_POINTS_ONLY and self.dataset_cfg.VERTICAL_FOV_ONLY:
                 raise ValueError("Configuration errorr: Only one of FOV_POINTS_ONLY or VERTICAL_FOV_ONLY may be true!")
-            
+            # TODO: Prof. Lücken fragen, ob v. FoV-Beschränkung bei KITTI notwendig
+            # Default kann h. & v. beschränkt werden
             pts_rect = calib.lidar_to_rect(points[:, 0:3])
-            if self.dataset_cfg.FOV_POINTS_ONLY:
+
+            if self.dataset_cfg.FOV_POINTS_ONLY and not self.dataset_cfg.VERTICAL_FOV_ONLY:
                 fov_flag = self.get_fov_flag(pts_rect, img_shape, calib)
-            if self.dataset_cfg.VERTICAL_FOV_ONLY:
+            if self.dataset_cfg.VERTICAL_FOV_ONLY and not self.dataset_cfg.FOV_POINTS_ONLY:
                 fov_flag = self.get_fov_flag_vertical(pts_rect, img_shape, calib)
 
                 points = points[fov_flag]
-
-            # new - beam label logic
-            if self.dataset_cfg.get('INCLUDE_DIODE_IDS', False):
-                #points = self.get_lidar(sample_idx, with_beam_label=True)
-                input_dict.update({
-                    "num_aug_beams": self.num_aug_beams
-                })
-            else:
-                points = points
-            # new
 
             input_dict['points'] = points
             
@@ -733,19 +747,18 @@ class KittiDatasetCustom(DatasetTemplate):
         # Change the parameter data_dict to data for working with several dicts instead of one
         data_list, applied_augmentors = self.prepare_data_custom(data=input_dict) # jump to dataset.py
         
-        if 'annos' in info:
-            # loop over data_dicts in data_list (camera frame information)
-            for data_dict in data_list: 
-                data_dict['truncated'] = annos['truncated']
-                data_dict['occluded'] = annos['occluded']
-                data_dict['alpha'] = annos['alpha']
-                data_dict['bbox'] = annos['bbox']
-                data_dict['dimensions'] = annos['dimensions']
-                data_dict['location'] = annos['location']
-                data_dict['rotation_y'] = annos['rotation_y']
-                data_dict['difficulty'] = annos['difficulty']
-                data_dict['score'] = annos['score']
-                data_dict['image_shape'] = img_shape
+        # if 'annos' in info:
+        #     # loop over data_dicts in data_list (camera frame information)
+        #     for data_dict in data_list:
+        #         data_dict['truncated'] = annos['truncated']
+        #         data_dict['occluded'] = annos['occluded']
+        #         data_dict['alpha'] = annos['alpha']
+        #         data_dict['bbox'] = annos['bbox']
+        #         data_dict['dimensions'] = annos['dimensions']
+        #         data_dict['location'] = annos['location']
+        #         data_dict['rotation_y'] = annos['rotation_y']
+        #         data_dict['score'] = annos['score']
+        #         data_dict['image_shape'] = img_shape
 
         return data_list, applied_augmentors
 
