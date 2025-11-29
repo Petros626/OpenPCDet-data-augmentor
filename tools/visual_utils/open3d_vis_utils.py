@@ -113,11 +113,14 @@ def draw_demo_scenes(points, gt_boxes=None, gt_labels=None, gt_score=None, ref_b
 
     if vc == 'val':
         params = open3d.io.read_pinhole_camera_parameters('ScreenCamera_val.json')
-        view_control.convert_from_pinhole_camera_parameters(params,allow_arbitrary=True)
+        view_control.convert_from_pinhole_camera_parameters(params, allow_arbitrary=True)
+    elif vc == 'bev':
+        params = open3d.io.read_pinhole_camera_parameters('ScreenCamera_val_bev.json')
+        view_control.convert_from_pinhole_camera_parameters(params, allow_arbitrary=True)
     else:
         #view_control = vis.get_view_control()
         params = open3d.io.read_pinhole_camera_parameters('ScreenCamera_all.json')
-        view_control.convert_from_pinhole_camera_parameters(params,allow_arbitrary=True)
+        view_control.convert_from_pinhole_camera_parameters(params, allow_arbitrary=True)
     
     vis.run()
     vis.destroy_window()
