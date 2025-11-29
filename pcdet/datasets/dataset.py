@@ -248,21 +248,6 @@ class DatasetTemplate(torch_data.Dataset):
             if 'calib' in data:
                 calib = data['calib']
             
-            """ 
-            Calibration file explained:
-            P0, P1, P2, P3:
-            These matrices are the projection matrices for various cameras. 
-            They transform 3D (LiDAR) world coordinates into 2D(Camera) image coordinates.
-            R0_rect:
-            This is the rectification matrix used to bring all camera images onto a common plane. 
-            It is therefore used to align the camera data correctly.
-            Tr_velo_to_cam:
-            This matrix is the transformation matrix that translates the coordinates from LiDAR to 
-            the camera coordinate system.
-            Tr_imu_to_velo:
-            This matrix describes the transformation of IMU coordinates into the LiDAR coordinate system. 
-            """
-            
             data_list, applied_augmentors = self.data_augmentor.forward_custom(
                  data_dict={
                      **data,
