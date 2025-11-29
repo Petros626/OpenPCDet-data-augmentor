@@ -17,6 +17,15 @@ def compute_angles(pc_np):
 
     return theta, phi
 
+def compute_angles_wo_range(pc_np):
+    x, y, z = pc_np[:, 0], pc_np[:, 1], pc_np[:, 2]
+    
+    r = np.sqrt(x**2 + y**2 + z**2)
+    theta = np.arcsin(z / r)
+    phi = np.arctan2(y, x)
+
+    return theta, phi
+
 def beam_label(theta, beam, method='kmeans'):
     if method == 'kmeans++':
         estimator=KMeans(n_clusters=beam, init='k-means++', n_init="auto")
