@@ -412,7 +412,7 @@ class ZODDatasetCustom(DatasetTemplate):
 
         # filter out objects without 2d/3d anno
         obj_list = [obj for obj in obj_list if obj.box2d is not None and obj.box3d is not None]
-        # filter out object without 3d anno
+        # filter out objects only without 3d anno
         #obj_list = [obj for obj in obj_list if obj.box3d is not None]  
         # DEBUG print
         #if self.logger is not None:
@@ -521,8 +521,6 @@ class ZODDatasetCustom(DatasetTemplate):
                     
                     annotations['truncated'] = np.array([obj.truncation for obj in obj_list])
                     annotations['occluded'] = np.array([obj.occlusion for obj in obj_list])
-                    # calculated below
-                    #annotations['alpha'] = np.array([-10.0 for _ in obj_list], dtype=np.float32) # dummy value, not provided
                     annotations['bbox'] = np.array([obj.box2d.xyxy for obj in obj_list], dtype=np.float32) # xmin, ymin, xmax, ymax
                     annotations['dimensions'] = np.array([obj.box3d.size for obj in obj_list]) # l, w, h (LiDAR) format
                     annotations['location'] = np.array([obj.box3d.center for obj in obj_list]) # x, y, z (LiDAR) format
@@ -656,9 +654,6 @@ class ZODDatasetCustom(DatasetTemplate):
                 annotations['name'] = np.array([obj.subclass for obj in obj_list])
                 annotations['truncated'] = np.array([obj.truncation for obj in obj_list])
                 annotations['occluded'] = np.array([obj.occlusion for obj in obj_list])
-                # calculated below
-                #annotations['alpha'] = np.array([-10.0 for _ in obj_list], dtype=np.float32) # dummy value, not provided
-
                 annotations['bbox'] = np.array([obj.box2d.xyxy for obj in obj_list], dtype=np.float32) # xmin, ymin, xmax, ymax
                 # no filtering for 2d box
                 #annotations['bbox'] = np.array([[-1, -1, -1, -1] for _ in obj_list], dtype=np.float32) # # dummy value, not provided

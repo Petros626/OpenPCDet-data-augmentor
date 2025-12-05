@@ -259,6 +259,9 @@ class KittiDatasetCustom(DatasetTemplate):
             data_processor = DataProcessor(self.dataset_cfg.DATA_PROCESSOR, point_cloud_range=self.point_cloud_range, 
                                            training=self.training, num_point_features=self.point_feature_encoder.num_point_features)
             
+            if with_beam_label and self.logger is not None:
+                self.logger.info("Validation data created with beam label for point cloud data")
+            
             def process_single_scene_val(sample_idx):
                 print('KittiDatasetCustom: %s sample_idx: %s' % (self.split, sample_idx))
            
@@ -323,6 +326,7 @@ class KittiDatasetCustom(DatasetTemplate):
                             info.update({"num_aug_beams": num_aug_beams})
                         else:
                             points = self.get_lidar(sample_idx)
+
                         calib = self.get_calib(sample_idx)
                         pts_rect = calib.lidar_to_rect(points[:, 0:3])
                         fov_flag = self.get_fov_flag(pts_rect, info['image']['image_shape'], calib)
@@ -469,12 +473,13 @@ class KittiDatasetCustom(DatasetTemplate):
         import torch
         from pathlib import Path
         
-        if with_beam_labels:
-            database_save_path = Path(self.root_path) / ('gt_database_beamlabels' if split == 'train' else ('gt_database_%s_beamlabels' % split))
-            db_info_save_path = Path(self.root_path) / ('kitti_dbinfos_%s_beamlabels.pkl' % split)
-        else:
-            database_save_path = Path(self.root_path) / ('gt_database' if split == 'train' else ('gt_database_%s' % split))
-            db_info_save_path = Path(self.root_path) / ('kitti_dbinfos_%s.pkl' % split)
+        if with_beam_labels and self.logger is not None:
+            self.logger.info("GT database created with beam label for point cloud data")
+            #database_save_path = Path(self.root_path) / ('gt_database_beamlabels' if split == 'train' else ('gt_database_%s_beamlabels' % split))
+            #db_info_save_path = Path(self.root_path) / ('kitti_dbinfos_%s_beamlabels.pkl' % split)
+
+        database_save_path = Path(self.root_path) / ('gt_database' if split == 'train' else ('gt_database_%s' % split))
+        db_info_save_path = Path(self.root_path) / ('kitti_dbinfos_%s.pkl' % split)
         
         readme_file = database_save_path / 'README.md'
         readme_content="""
@@ -719,7 +724,7 @@ class KittiDatasetCustom(DatasetTemplate):
                 points = self.get_lidar(sample_idx)
 
             if self.dataset_cfg.FOV_POINTS_ONLY and self.dataset_cfg.VERTICAL_FOV_ONLY:
-                raise ValueError("Configuration errorr: Only one of FOV_POINTS_ONLY or VERTICAL_FOV_ONLY may be true!")
+                raise ValueError("Configuration error: Only one of FOV_POINTS_ONLY or VERTICAL_FOV_ONLY may be true!")
             # TODO: Prof. Lücken fragen, ob v. FoV-Beschränkung bei KITTI notwendig
             # Default kann h. & v. beschränkt werden
             pts_rect = calib.lidar_to_rect(points[:, 0:3])
