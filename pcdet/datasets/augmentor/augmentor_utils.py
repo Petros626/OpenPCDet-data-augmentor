@@ -765,4 +765,88 @@ def densify_points_along_range(points, num_point_copies=1, delta_r_range=(0.1, 0
             
         new_points.append(pts_new)
 
-    return np.vstack(new_points)          
+    return np.vstack(new_points)  
+
+# source: https://github.com/tusen-ai/RangeDet/blob/1df87b2d9aa9ef3f77ad634c2656b96867c7eac8/datasets/create_range_image_in_kitti.py#L107
+def get_range_image_hdl64e(points, incl, height):
+    incl_deg = incl * 180 / 3.1415
+    # print(incl - np.roll(incl, 1))
+    xy_norm = np.linalg.norm(points[:, :2], ord = 2, axis = 1)
+    error_list = []
+    for i in range(len(incl)):
+        h = height[i]
+        theta = incl[i]
+        error = np.abs(theta - np.arctan2(h - points[:,2], xy_norm))
+        error_list.append(error)
+    all_error = np.stack(error_list, axis=-1)
+    row_inds = np.argmin(all_error, axis=-1)
+
+    azi = np.arctan2(points[:,1], points[:,0])
+    # points per beam
+    width = 2048 # points per laser per revolution (data sheet: 2083)
+    # old
+    col_inds = width - 1.0 + 0.5 - (azi + np.pi) / (2.0 * np.pi) * width # right to left (Azimuth +π -> -π)
+    col_inds = np.round(col_inds).astype(np.int32)
+    col_inds[col_inds == width] = width - 1
+    col_inds[col_inds < 0] = 0
+
+    # Ch 0: Range
+    # Ch 1: x
+    # Ch 2: y
+    # Ch 3: z
+    # Ch 4: intensity
+    empty_range_image = np.full((64, width, 5), -1, dtype = np.float32) 
+    point_range = np.linalg.norm(points[:,:3], axis = 1, ord = 2)
+
+    order = np.argsort(-point_range) 
+    point_range = point_range[order]
+    points = points[order]
+    row_inds = row_inds[order]
+    col_inds = col_inds[order]
+
+    empty_range_image[row_inds, col_inds, :] = np.concatenate([point_range[:,None], points], axis = 1)
+
+    return empty_range_image
+
+def get_range_image_hdl64e_beam_labels(points, beam_labels, num_beams=64, width=2048):
+    azi = np.arctan2(points[:,1], points[:,0])
+    azimuth_min = -np.pi
+    azimuth_max = np.pi
+    col_inds = width - 1 - ((azi - azimuth_min) / (azimuth_max - azimuth_min) * (width - 1)).astype(np.int32) # left to right
+    col_inds = np.clip(col_inds, 0, width-1)
+
+    # Ch 0: Range
+    # Ch 1: x
+    # Ch 2: y
+    # Ch 3: z
+    # Ch 4: intensity
+    range_image = np.full((num_beams, width, points.shape[1] + 1), -1, dtype=np.float32)
+    point_range = np.linalg.norm(points[:,:3], axis=1)
+
+    order = np.argsort(-point_range)
+    row_inds = beam_labels[order]
+    col_inds = col_inds[order]
+    points = points[order]
+    point_range = point_range[order]
+
+    range_image[row_inds, col_inds, :] = np.concatenate([point_range[:, None], points], axis=1)
+
+    return range_image      
+
+def range_image_to_cartesian(range_image, beam_label=False):
+    H, W, C = range_image.shape  # (64, 2048, 5)
+
+    mask = range_image[:, :, 0] > 0
+
+    x = range_image[:, :, 1][mask]
+    y = range_image[:, :, 2][mask]
+    z = range_image[:, :, 3][mask]
+    intensity = range_image[:, :, 4][mask]
+
+    if beam_label:
+        beam_labels = np.repeat(np.arange(H)[:, None], W, axis=1)[mask]
+        points = np.stack([x, y, z, intensity, beam_labels], axis=-1)
+    else:
+        points = np.stack([x, y, z, intensity], axis=-1)
+
+    return points.astype(np.float32)

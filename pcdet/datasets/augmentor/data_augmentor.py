@@ -11,6 +11,8 @@ from ...ops.iou3d_nms.iou3d_nms_utils import boxes_iou3d_gpu
 from ..augmentor.augmentor_utils import get_points_in_box
 from ...utils.box_utils import remove_points_in_boxes3d
 
+from numba import njit
+
 
 class DataAugmentor(object):
     def __init__(self, root_path, augmentor_configs, class_names, logger=None):
@@ -250,15 +252,111 @@ class DataAugmentor(object):
 
         r = np.sqrt(np.sum(points[:,:3]**2, axis=1))
         polar_image = points.copy()
-        polar_image[:,0] = phi # Azimuth
-        polar_image[:,1] = theta # Elevation
+        polar_image[:,0] = phi # Azimuth (φ)
+        polar_image[:,1] = theta # Elevation (θ)
         polar_image[:,2] = r 
 
         return polar_image
 
-    def random_beam_re_sampling(self, data_dict=None, config=None):
-        # source: https://github.com/griesbchr/3DTrans/blob/3174699105aefb3ed11e524606f707fd91239850/pcdet/datasets/augmentor/data_augmentor.py#L147
+    # source: Up-Sampling Method for Low-Resolution LiDAR Point Cloud to Enhance 3D Object Detection in an Autonomous Driving Environment
+    # Pixel-Distance Weighted Interpolation function
+    def pixel_distance_weighted_interpolation(self, range_image):
+        H, W, C = range_image.shape # (64, 2048, 5)
+        upsampled = range_image.copy()
+        neighbor_offsets = [(-1, -1), (-1, 0), (-1, 1), (1, -1), (1, 0), (1, 1)]  # P1-P6
+        MAX_RANGE = 70.0 # m
 
+        empty_mask = (range_image[:, :, 0] < 0)
+        empty_indices = np.argwhere(empty_mask)
+        
+        for i, j in empty_indices:
+            neighbors = []
+            dists = []
+            for di, dj in neighbor_offsets:
+                ni, nj = i + di, j + dj
+                if 0 <= ni < H and 0 <= nj < W: # and range_image[ni, nj, 0] >= 0:
+                    neighbor_range = range_image[ni, nj, 0]
+                    if neighbor_range > 0 and neighbor_range < MAX_RANGE:
+                        neighbors.append(range_image[ni, nj])
+                        dists.append(np.sqrt(di**2 + dj**2)) # eucledian distance
+            if not neighbors:
+                continue
+            neighbors = np.stack(neighbors)
+            dists = np.array(dists)
+            weights = np.exp(-0.5 * dists)
+            weights_sum = np.sum(weights)
+            if weights_sum == 0:
+                continue
+            upsampled[i, j] = np.sum(weights[:, None] * neighbors, axis=0) / weights_sum
+
+        return upsampled
+
+    # source: Up-Sampling Method for Low-Resolution LiDAR Point Cloud to Enhance 3D Object Detection in an Autonomous Driving Environment
+    # Pixel-Distance and Range Weighted Interpolation function
+    def pixel_distance_range_weighted_interpolation(self, range_image, MAX_RANGE=None):
+        H, W, C = range_image.shape # (64, 2048, 5)
+        upsampled = range_image.copy()
+        neighbor_offsets = [(-1, -1), (-1, 0), (-1, 1), (1, -1), (1, 0), (1, 1)]  # P1-P6
+        """
+        Azimuth angle (α)
+        -------------->
+          |   P1    P2  P3
+          |d_1 \ d_2|  / d_3
+          |         P'
+        ω |d_4 / d_5|   \ d_6
+          |   /     |    \
+          |  P4     P5   P6
+          |
+          v  
+        Vertical angle (ω) 
+        P': anchor pixel
+        P_i: surrounding neighbor points
+        d_i: relative pixel distance from P'
+        """
+
+        empty_mask  = (range_image[:, :, 0] < 0)
+        empty_indices = np.argwhere(empty_mask)
+        
+        for i, j in empty_indices:
+            neighbors = []
+            dists = []
+            ranges = []
+
+            for di, dj in neighbor_offsets:
+                ni, nj = i + di, j+ dj
+                if 0 <= ni < H and 0 <= nj < W:
+                    neighbor_range = range_image[ni, nj, 0]
+                    # s_i filtering: skip outliers (range <= 0 or >= MAX_RANGE)
+                    if neighbor_range > 0 and neighbor_range < MAX_RANGE:
+                        neighbors.append(range_image[ni, nj])
+                        dists.append(np.sqrt(di**2 + dj**2))
+                        ranges.append(neighbor_range)
+
+            if not neighbors:
+                continue
+
+            neighbors = np.stack(neighbors)
+            dists = np.array(dists)
+            ranges = np.array(ranges)
+
+            Rmin = np.min(ranges)
+            # s_i: 0 if neighbor range <= 0, otherwise 1 (already filtered here above)
+            s_i = np.ones_like(ranges)
+            # paper equation for W_i:
+            W_i = np.exp(-0.5 * dists) * (2 / (1 + np.exp(ranges - Rmin)))
+            W_i = W_i * s_i
+            weights_sum = np.sum(W_i)
+
+            if weights_sum == 0:
+                continue
+                
+            # P' = sum(W_i * P_i) / sum(W_i)
+            upsampled[i, j] = np.sum(W_i[:, None] * neighbors, axis=0) / weights_sum
+
+        return upsampled
+        
+    # source: https://github.com/griesbchr/3DTrans/blob/3174699105aefb3ed11e524606f707fd91239850/pcdet/datasets/augmentor/data_augmentor.py#L147
+    def random_beam_re_sampling(self, data_dict=None, config=None):
         if data_dict is None:
             return partial(self.random_beam_re_sampling, config=config)
         
@@ -325,9 +423,6 @@ class DataAugmentor(object):
         data_dict['points'] = densified_points
 
         return data_dict
-
-    def d2_range_image_4ch(self, data_dict=None, config=None):
-        pass
     
     def random_local_rotation_v2(self, data_dict=None, config=None):
         """
