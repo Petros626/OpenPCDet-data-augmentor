@@ -1,10 +1,12 @@
-def zod_occlusion_to_kitti(zod_occlusion): 
+def zod_occlusion_to_kitti(zod_occlusion):
+    # source: https://github.com/zenseact/EdgeAnnotationZChallenge/blob/35afb0dcffd6b7ca3982a9a3ffbe50e9c92875f0/eval/convert_annotations_to_kitti.py#L25 
     mapping = {
         'None': 0,
         'Light': 1,
         'Medium': 1,
         'Heavy': 2,
-        'VeryHeavy': 2
+        'VeryHeavy': 2,
+        'Undefined': 2  # "If undefined we assume the worst"
     }
 
     return mapping.get(zod_occlusion, 3)  # 3 = unknown

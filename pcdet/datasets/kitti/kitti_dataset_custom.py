@@ -39,7 +39,6 @@ class KittiDatasetCustom(DatasetTemplate):
         self.include_kitti_data(self.mode)
        
     def include_kitti_data(self, mode):
-        #print('KittiDatasetCustom: loading KITTI dataset')
         if self.logger is not None:
             self.logger.info('Loading KITTI dataset')
         kitti_infos = []
@@ -55,7 +54,7 @@ class KittiDatasetCustom(DatasetTemplate):
 
         # Add the newly loaded KITTI dataset information to kitti_infos list.
         self.kitti_infos.extend(kitti_infos)
-        #print('KittiDatsetCustom: Total training samples for KITTI dataset: %d' % (len(kitti_infos)))
+
         if self.logger is not None:
             self.logger.info('Total samples for KITTI dataset: %d' % (len(kitti_infos)))
 
@@ -134,7 +133,7 @@ class KittiDatasetCustom(DatasetTemplate):
             beam_labels = self.get_beam_labels(idx)
 
             # concat points and beam labels
-            points = np.concatenate((points, beam_labels.reshape(-1, 1)), axis=1)
+            points = np.concatenate((points, beam_labels.reshape(-1, 1)), dtype=np.float32, axis=1)
 
         return points
     
@@ -238,7 +237,6 @@ class KittiDatasetCustom(DatasetTemplate):
 
         """
         pts_img, pts_rect_depth = calib.rect_to_img(pts_rect)
-        #val_flag_1 = np.logical_and(pts_img[:, 0] >= 0, pts_img[:, 0] < img_shape[1]) # horizontal FoV: 90°
         val_flag_2 = np.logical_and(pts_img[:, 1] >= 0, pts_img[:, 1] < img_shape[0]) # vertical FoV: 35°
         val_vertical_flag = val_flag_2 # vertical only
         pts_valid_flag = np.logical_and(val_vertical_flag, pts_rect_depth >= 0)
@@ -246,126 +244,124 @@ class KittiDatasetCustom(DatasetTemplate):
         return pts_valid_flag
     
     # Modified version of original get_infos() for pre-processing validation data
-    def get_infos_val(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4, class_names=None, fov_points_only=False, with_beam_label=False):
+    def get_infos_val(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4, class_names=None, with_beam_label=False):
         import concurrent.futures as futures
         import time
 
-        if self.mode == 'test': # validation mode
-            from pcdet.datasets.processor.point_feature_encoder import PointFeatureEncoder
+        from pcdet.datasets.processor.point_feature_encoder import PointFeatureEncoder
+        
+        point_feature_encoder = PointFeatureEncoder(self.dataset_cfg.POINT_FEATURE_ENCODING, point_cloud_range=self.point_cloud_range)
+
+        from pcdet.datasets.processor.data_processor import DataProcessor 
+        data_processor = DataProcessor(self.dataset_cfg.DATA_PROCESSOR, point_cloud_range=self.point_cloud_range, 
+                                        training=self.training, num_point_features=self.point_feature_encoder.num_point_features)
+        
+        if with_beam_label and self.logger is not None:
+            self.logger.info("Validation data created with beam label for point cloud data")
             
-            point_feature_encoder = PointFeatureEncoder(self.dataset_cfg.POINT_FEATURE_ENCODING, point_cloud_range=self.point_cloud_range)
+        def process_single_scene_val(sample_idx):
+            print('KittiDatasetCustom: %s sample_idx: %s' % (self.split, sample_idx))
+        
+            info = {}
+            pc_info = {'num_features': num_features, 'lidar_idx': sample_idx} # num_features: x,y,z,intensity
+            info['point_cloud'] = pc_info
 
-            from pcdet.datasets.processor.data_processor import DataProcessor 
-            data_processor = DataProcessor(self.dataset_cfg.DATA_PROCESSOR, point_cloud_range=self.point_cloud_range, 
-                                           training=self.training, num_point_features=self.point_feature_encoder.num_point_features)
-            
-            if with_beam_label and self.logger is not None:
-                self.logger.info("Validation data created with beam label for point cloud data")
-            
-            def process_single_scene_val(sample_idx):
-                print('KittiDatasetCustom: %s sample_idx: %s' % (self.split, sample_idx))
-           
-                info = {}
-                pc_info = {'num_features': num_features, 'lidar_idx': sample_idx} # num_features: x,y,z,intensity
-                info['point_cloud'] = pc_info
+            image_info = {'image_idx': sample_idx, 'image_shape': self.get_image_shape(sample_idx)}
+            info['image'] = image_info
 
-                image_info = {'image_idx': sample_idx, 'image_shape': self.get_image_shape(sample_idx)}
-                info['image'] = image_info
+            calib = self.get_calib(sample_idx)
+            P2 = np.concatenate([calib.P2, np.array([[0., 0., 0., 1.]])], axis=0)  
+            R0_4x4 = np.zeros([4, 4], dtype=calib.R0.dtype)
+            R0_4x4[3, 3] = 1.
+            R0_4x4[:3, :3] = calib.R0
+            V2C_4x4 = np.concatenate([calib.V2C, np.array([[0., 0., 0., 1.]])], axis=0)
+            calib_info = {'P2': P2, 'R0_rect': R0_4x4, 'Tr_velo_to_cam': V2C_4x4}
+            info['calib'] = calib_info
 
-                calib = self.get_calib(sample_idx)
-                P2 = np.concatenate([calib.P2, np.array([[0., 0., 0., 1.]])], axis=0)  
-                R0_4x4 = np.zeros([4, 4], dtype=calib.R0.dtype)
-                R0_4x4[3, 3] = 1.
-                R0_4x4[:3, :3] = calib.R0
-                V2C_4x4 = np.concatenate([calib.V2C, np.array([[0., 0., 0., 1.]])], axis=0)
-                calib_info = {'P2': P2, 'R0_rect': R0_4x4, 'Tr_velo_to_cam': V2C_4x4}
-                info['calib'] = calib_info
+            if has_label:
+                obj_list = self.get_label(sample_idx) # object3d_custom
+                
+                # Custom change: filter the obj_list related to class_names
+                filtered_obj_list = [obj for obj in obj_list if obj.cls_type in class_names]
+                annotations = {}
+                
+                # Custom change: containing only specified classes of filtered_obj_list
+                annotations['name'] = np.array([obj.cls_type for obj in filtered_obj_list]) # label names
+                annotations['truncated'] = np.array([obj.truncation for obj in filtered_obj_list]) # truncation of object
+                annotations['occluded'] = np.array([obj.occlusion for obj in filtered_obj_list]) # occulsion of object
+                annotations['alpha'] = np.array([obj.alpha for obj in filtered_obj_list]) # object observation angle
+                annotations['bbox'] = np.concatenate([obj.box2d.reshape(1, 4) for obj in filtered_obj_list], axis=0) # xmin, ymin, xmax, ymax
+                annotations['dimensions'] = np.array([[obj.l, obj.h, obj.w] for obj in filtered_obj_list])  # l,h,w (camera) format
+                annotations['location'] = np.concatenate([obj.loc.reshape(1, 3) for obj in filtered_obj_list], axis=0) # x,y,z (camera) format
+                annotations['rotation_y'] = np.array([obj.ry for obj in filtered_obj_list]) # rotation y-axis (camera) format
+                annotations['score'] = np.array([obj.score for obj in filtered_obj_list]) # confidence in detection
+                annotations['difficulty'] = np.array([obj.level for obj in filtered_obj_list], np.int32)
+                
+                # Custom change: only allowed_classes object classes in the label are counted
+                num_objects = len(filtered_obj_list)
+                num_gt = len(annotations['name'])
+                index = list(range(num_objects)) + [-1] * (num_gt - num_objects)
+                annotations['index'] = np.array(index, dtype=np.int32)
+                # only the gt_boxes are inserted, which base on num_objects
+                loc = annotations['location'][:num_objects]
+                dims = annotations['dimensions'][:num_objects]
+                rots = annotations['rotation_y'][:num_objects]
+                loc_lidar = calib.rect_to_lidar(loc)
+                l, h, w = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
+                # only relevant for KITTI!
+                loc_lidar[:, 2] += h[:, 0] / 2 # from the box centre to the box bottom edge (floor)
+                gt_boxes_lidar = np.concatenate([loc_lidar, l, w, h, -(np.pi / 2 + rots[..., np.newaxis])], axis=1) # Cam -> LiDAR box
+                annotations['gt_boxes_lidar'] = gt_boxes_lidar
 
-                if has_label:
-                    obj_list = self.get_label(sample_idx) # object3d_custom
+                info['annos'] = annotations
+
+                if count_inside_pts:
+                    if self.dataset_cfg.get('INCLUDE_DIODE_IDS', False):
+                        points = self.get_lidar(sample_idx, with_beam_label=with_beam_label)
+                        beam_label = points[:, -1].astype(int) # get beam_label
+                        num_aug_beams = len(np.unique(beam_label)) # 64
+                        info.update({"num_aug_beams": num_aug_beams})
+                    else:
+                        points = self.get_lidar(sample_idx)
+
+                    calib = self.get_calib(sample_idx)
+                    pts_rect = calib.lidar_to_rect(points[:, 0:3])
+                    fov_flag = self.get_fov_flag(pts_rect, info['image']['image_shape'], calib)
+                    pts_fov = points[fov_flag]
+
+                    if self.dataset_cfg.FOV_POINTS_ONLY:
+                        # this dict entry is needed for PointFeatureEncoder.forward()
+                        # Use this, when you want FoV
+                        info['points'] = pts_fov
+                    else:
+                        # all points in front of data origin, limited later (see l. 301)
+                        info['points'] = points 
+
+                    corners_lidar = box_utils.boxes_to_corners_3d(gt_boxes_lidar)
+                    num_points_in_gt = -np.ones(num_gt, dtype=np.int32)
+
+                    for k in range(num_objects):
+                        flag = box_utils.in_hull(pts_fov[:, 0:3], corners_lidar[k])
+                        num_points_in_gt[k] = flag.sum()
+                    annotations['num_points_in_gt'] = num_points_in_gt   
                     
-                    # Custom change: filter the obj_list related to class_names
-                    filtered_obj_list = [obj for obj in obj_list if obj.cls_type in class_names]
-                    annotations = {}
-                    
-                    # Custom change: containing only specified classes of filtered_obj_list
-                    annotations['name'] = np.array([obj.cls_type for obj in filtered_obj_list]) # label names
-                    annotations['truncated'] = np.array([obj.truncation for obj in filtered_obj_list]) # truncation of object
-                    annotations['occluded'] = np.array([obj.occlusion for obj in filtered_obj_list]) # occulsion of object
-                    annotations['alpha'] = np.array([obj.alpha for obj in filtered_obj_list]) # object observation angle
-                    annotations['bbox'] = np.concatenate([obj.box2d.reshape(1, 4) for obj in filtered_obj_list], axis=0) # xmin, ymin, xmax, ymax
-                    annotations['dimensions'] = np.array([[obj.l, obj.h, obj.w] for obj in filtered_obj_list])  # l,h,w (camera) format
-                    annotations['location'] = np.concatenate([obj.loc.reshape(1, 3) for obj in filtered_obj_list], axis=0) # x,y,z (camera) format
-                    annotations['rotation_y'] = np.array([obj.ry for obj in filtered_obj_list]) # rotation y-axis (camera) format
-                    annotations['score'] = np.array([obj.score for obj in filtered_obj_list]) # confidence in detection
-                    #annotations['difficulty'] = np.array([obj.level for obj in filtered_obj_list], np.int32) # not needed
-                 
-                    # Custom change: only allowed_classes object classes in the label are counted
-                    num_objects = len(filtered_obj_list)
-                    num_gt = len(annotations['name'])
-                    index = list(range(num_objects)) + [-1] * (num_gt - num_objects)
-                    annotations['index'] = np.array(index, dtype=np.int32)
-                    # only the gt_boxes are inserted, which base on num_objects
-                    loc = annotations['location'][:num_objects]
-                    dims = annotations['dimensions'][:num_objects]
-                    rots = annotations['rotation_y'][:num_objects]
-                    loc_lidar = calib.rect_to_lidar(loc)
-                    l, h, w = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
-                    # only relevant for KITTI!
-                    loc_lidar[:, 2] += h[:, 0] / 2 # from the box centre to the box bottom edge (floor)
-                    gt_boxes_lidar = np.concatenate([loc_lidar, l, w, h, -(np.pi / 2 + rots[..., np.newaxis])], axis=1) # Cam -> LiDAR box
-                    annotations['gt_boxes_lidar'] = gt_boxes_lidar
+                    temp_info = point_feature_encoder.forward(data_dict=info)
+                    # Note: Use DataProcessor to limit the cloud to pc range in config file
+                    info = data_processor.forward(data_dict=temp_info)
 
-                    info['annos'] = annotations
-
-                    if count_inside_pts:
-                        if self.dataset_cfg.get('INCLUDE_DIODE_IDS', False):
-                            points = self.get_lidar(sample_idx, with_beam_label=with_beam_label)
-                            beam_label = points[:, -1].astype(int) # get beam_label
-                            num_aug_beams = len(np.unique(beam_label)) # 64
-                            info.update({"num_aug_beams": num_aug_beams})
-                        else:
-                            points = self.get_lidar(sample_idx)
-
-                        calib = self.get_calib(sample_idx)
-                        pts_rect = calib.lidar_to_rect(points[:, 0:3])
-                        fov_flag = self.get_fov_flag(pts_rect, info['image']['image_shape'], calib)
-                        pts_fov = points[fov_flag]
-
-                        if fov_points_only:
-                            # this dict entry is needed for PointFeatureEncoder.forward()
-                            # Use this, when you want FoV
-                            info['points'] = pts_fov
-                        else:
-                            # all points in front of data origin, limited later (see l. 301)
-                            info['points'] = points 
-
-                        corners_lidar = box_utils.boxes_to_corners_3d(gt_boxes_lidar)
-                        num_points_in_gt = -np.ones(num_gt, dtype=np.int32)
-
-                        for k in range(num_objects):
-                            flag = box_utils.in_hull(pts_fov[:, 0:3], corners_lidar[k])
-                            num_points_in_gt[k] = flag.sum()
-                        annotations['num_points_in_gt'] = num_points_in_gt   
-                        
-                        temp_info = point_feature_encoder.forward(data_dict=info)
-                        # Note: Use DataProcessor to limit the cloud to pc range in config file
-                        info = data_processor.forward(data_dict=temp_info)
-
-                return info 
+            return info 
             
         sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
 
-        if self.mode == 'test': # val mode
-            start_time = time.time()
-            with futures.ThreadPoolExecutor(num_workers) as executor:
-                infos = executor.map(process_single_scene_val, sample_id_list)
+        start_time = time.time()
+        with futures.ThreadPoolExecutor(num_workers) as executor:
+            infos = executor.map(process_single_scene_val, sample_id_list)
 
-            end_time = time.time()
-            print("Total time for loading infos: ", end_time - start_time, "s")
-            print("Loading speed for infos: ", len(sample_id_list) / (end_time - start_time), "sample/s")
+        end_time = time.time()
+        print("Total time for loading infos: ", end_time - start_time, "s")
+        print("Loading speed for infos: ", len(sample_id_list) / (end_time - start_time), "sample/s")
 
-            return list(infos)
+        return list(infos)
 
     def get_infos(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4):
         import concurrent.futures as futures
@@ -708,6 +704,7 @@ class KittiDatasetCustom(DatasetTemplate):
                 'location': annos['location'],
                 'rotation_y': annos['rotation_y'],
                 'score': annos['score'],
+                'difficulty': annos['difficulty'],
                 'image_shape': img_shape
             }
 
@@ -723,17 +720,9 @@ class KittiDatasetCustom(DatasetTemplate):
             else:
                 points = self.get_lidar(sample_idx)
 
-            if self.dataset_cfg.FOV_POINTS_ONLY and self.dataset_cfg.VERTICAL_FOV_ONLY:
-                raise ValueError("Configuration error: Only one of FOV_POINTS_ONLY or VERTICAL_FOV_ONLY may be true!")
-            # TODO: Prof. Lücken fragen, ob v. FoV-Beschränkung bei KITTI notwendig
-            # Default kann h. & v. beschränkt werden
-            pts_rect = calib.lidar_to_rect(points[:, 0:3])
-
-            if self.dataset_cfg.FOV_POINTS_ONLY and not self.dataset_cfg.VERTICAL_FOV_ONLY:
+            if self.dataset_cfg.FOV_POINTS_ONLY: # (90°, 35°)
+                pts_rect = calib.lidar_to_rect(points[:, 0:3])
                 fov_flag = self.get_fov_flag(pts_rect, img_shape, calib)
-            if self.dataset_cfg.VERTICAL_FOV_ONLY and not self.dataset_cfg.FOV_POINTS_ONLY:
-                fov_flag = self.get_fov_flag_vertical(pts_rect, img_shape, calib)
-
                 points = points[fov_flag]
 
             input_dict['points'] = points
@@ -751,19 +740,6 @@ class KittiDatasetCustom(DatasetTemplate):
         
         # Change the parameter data_dict to data for working with several dicts instead of one
         data_list, applied_augmentors = self.prepare_data_custom(data=input_dict) # jump to dataset.py
-        
-        # if 'annos' in info:
-        #     # loop over data_dicts in data_list (camera frame information)
-        #     for data_dict in data_list:
-        #         data_dict['truncated'] = annos['truncated']
-        #         data_dict['occluded'] = annos['occluded']
-        #         data_dict['alpha'] = annos['alpha']
-        #         data_dict['bbox'] = annos['bbox']
-        #         data_dict['dimensions'] = annos['dimensions']
-        #         data_dict['location'] = annos['location']
-        #         data_dict['rotation_y'] = annos['rotation_y']
-        #         data_dict['score'] = annos['score']
-        #         data_dict['image_shape'] = img_shape
 
         return data_list, applied_augmentors
 

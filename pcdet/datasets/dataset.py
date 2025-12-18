@@ -250,9 +250,9 @@ class DatasetTemplate(torch_data.Dataset):
             
             data_list, applied_augmentors = self.data_augmentor.forward_custom(
                  data_dict={
-                     **data,
-                     'gt_boxes_mask': gt_boxes_mask
-                 }
+                    **data,
+                    'gt_boxes_mask': gt_boxes_mask
+                }
             )
 
             # iterates over each data_dict in data_list that you have previously created. 
@@ -294,8 +294,8 @@ class DatasetTemplate(torch_data.Dataset):
                     new_index = np.random.randint(self.__len__())
                     if self.logger is not None:
                         self.logger.info(f"Sample {data_dict.get('frame_id', 'unknown')} has not gt_boxes. Replacing by new index {new_index}")
-                    return self.__getitem__(new_index) # load new sample
-                
+                    return self.__getitem__(new_index) # load new sample 
+
         # "original" dict with N x augmented dicts as list
         return data_list, applied_augmentors
 

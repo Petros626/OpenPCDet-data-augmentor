@@ -19,8 +19,6 @@ class DataAugmentor(object):
         self.root_path = root_path
         self.class_names = class_names
         self.logger = logger
-        #print('DataAugmentor initialized successfully') # DEBUG
-
         self.data_augmentor_queue = []
         self.applied_augmentors = []
         aug_config_list = augmentor_configs if isinstance(augmentor_configs, list) \
@@ -33,7 +31,6 @@ class DataAugmentor(object):
             cur_augmentor = getattr(self, cur_cfg.NAME)(config=cur_cfg) # read the names of the disabled augmentation from yaml
             self.data_augmentor_queue.append(cur_augmentor)
             self.applied_augmentors.append(cur_cfg.NAME)
-
 
     def disable_augmentation(self, augmentor_configs):
         self.data_augmentor_queue = []
@@ -74,7 +71,6 @@ class DataAugmentor(object):
 
     def random_world_flip(self, data_dict=None, config=None):
         if data_dict is None:
-            #print('DataAugmentor: random_world_flip() called with no data_dict')
             return partial(self.random_world_flip, config=config)
         
         gt_boxes, points = data_dict['gt_boxes'], data_dict['points']
@@ -84,8 +80,6 @@ class DataAugmentor(object):
             gt_boxes, points, enable = getattr(augmentor_utils, 'random_flip_along_%s' % cur_axis)(
                 gt_boxes, points, return_flip=True
             )
-            
-            
             #print(f"DataAugmentor: flip along {cur_axis}-axis, always enabled: {enable}")
             
             if 'roi_boxes' in data_dict.keys():
@@ -98,13 +92,11 @@ class DataAugmentor(object):
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
         data_dict['flip_%s' % cur_axis] = enable
-        #print('DataAugmentor: random world flip completed')
         return data_dict
     
 
     def random_world_rotation(self, data_dict=None, config=None):
         if data_dict is None:
-            #print('DataAugmentor: random_world_rotation() called with no data_dict')
             return partial(self.random_world_rotation, config=config)
         
         rot_range = config['WORLD_ROT_ANGLE']
@@ -125,7 +117,7 @@ class DataAugmentor(object):
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
         data_dict['noise_world_rotation'] = noise_rot
-        #print('DataAugmentor: random world rotation completed')
+
         return data_dict
 
 
@@ -146,6 +138,7 @@ class DataAugmentor(object):
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
         data_dict['noise_scale'] = noise_scale
+
         return data_dict
 
 
@@ -171,7 +164,6 @@ class DataAugmentor(object):
 
     def random_world_translation(self, data_dict=None, config=None):
         if data_dict is None:
-            #print('DataAugmentor: random_world_translation() called with no data_dict')
             return partial(self.random_world_translation, config=config)
         
         noise_translate_std = config['NOISE_TRANSLATE_STD']
@@ -194,7 +186,6 @@ class DataAugmentor(object):
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
         data_dict['noise_world_translation'] = noise_translate
-        #print('DataAugmentor: random world translation completed')
 
         return data_dict
 
@@ -224,7 +215,6 @@ class DataAugmentor(object):
         Please check the correctness of it before using.
         """
         if data_dict is None:
-            #print('DataAugmentor: random_local_rotation() called with no data_dict')
             return partial(self.random_local_rotation, config=config)
         
         rot_range = config['LOCAL_ROT_ANGLE']
@@ -239,7 +229,6 @@ class DataAugmentor(object):
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
         data_dict['noise_local_rotation'] = noise_rot
-        #print('DataAugmentor: random local rotation completed')
 
         return data_dict
     
@@ -264,7 +253,7 @@ class DataAugmentor(object):
         H, W, C = range_image.shape # (64, 2048, 5)
         upsampled = range_image.copy()
         neighbor_offsets = [(-1, -1), (-1, 0), (-1, 1), (1, -1), (1, 0), (1, 1)]  # P1-P6
-        MAX_RANGE = 70.0 # m
+        MAX_RANGE = 60.0 # m, see POINT_CLOUD_RANGE in config.yaml
 
         empty_mask = (range_image[:, :, 0] < 0)
         empty_indices = np.argwhere(empty_mask)
@@ -417,7 +406,7 @@ class DataAugmentor(object):
         
         points = data_dict['points']
         num_point_copies = config.get('NUM_POINT_COPIES', 1)
-        delta_r_range = config.get('DELTA_R_RANGE', [0.1, 0.3])
+        delta_r_range = config.get('DELTA_R_RANGE', [0.1, 0.3]) # set to default values of the paper
 
         densified_points = augmentor_utils.densify_points_along_range(points, num_point_copies, delta_r_range)
         data_dict['points'] = densified_points
@@ -622,7 +611,6 @@ class DataAugmentor(object):
         Please check the correctness of it before using.
         """
         if data_dict is None:
-            #print('DataAugmentor: random_local_scaling() called with no data_dict')
             return partial(self.random_local_scaling, config=config)
         
         scale_range = config['LOCAL_SCALE_RANGE']

@@ -440,6 +440,7 @@ class DataBaseSampler(object):
         points = np.concatenate([obj_points[:, :points.shape[-1]], points], axis=0)
         gt_names = np.concatenate([gt_names, sampled_gt_names], axis=0)
         gt_boxes = np.concatenate([gt_boxes, sampled_gt_boxes], axis=0)
+
         #print(f"DataBaseSampler: no. objects and names after gt_sampling: {len(gt_boxes), len(gt_names)}") 
         data_dict['gt_boxes'] = gt_boxes
         data_dict['gt_names'] = gt_names

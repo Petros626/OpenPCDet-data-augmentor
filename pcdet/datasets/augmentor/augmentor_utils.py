@@ -731,7 +731,7 @@ def local_pyramid_swap(gt_boxes, points, prob, max_num_pts, pyramids=None):
             points = np.concatenate([remain_points, points_res], axis=0)
     return gt_boxes, points
 
-def densify_points_along_range(points, num_point_copies=1, delta_r_range=(0.1, 0.2)):
+def densify_points_along_range(points, num_point_copies=1, delta_r_range=(0.1, 0.3)):
     """
     Args:
         points: (N, 3 + C) numpy array

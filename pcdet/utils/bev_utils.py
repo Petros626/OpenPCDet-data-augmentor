@@ -4,6 +4,19 @@ from numpy import float32, ndarray, array
 from typing import Union, List, Tuple, DefaultDict
 from numpy.typing import NDArray
 from collections import defaultdict
+import numpy as np
+import cv2
+import os
+
+AUGMENT_SHORT = [
+    "org",  # 0: Original
+    "gs",    # 1: gt_sampling
+    "wf",    # 2: random_world_flip
+    "wr",    # 3: random_world_rotation
+    "lr",    # 4: random_local_rotation
+    "ls",    # 5: random_local_scaling
+    "wt",    # 6: random_world_translation
+]
 
 
 # ==============================================================================
@@ -286,3 +299,447 @@ def max_density_distribution(density_array: NDArray[float32], image_height: int,
 #             print("Max Distribution:")
 #             for i in range(10):
 #                 print(f"Cells with {i} points: {distribution[i]}")
+
+def get_slice_index(z_value, z_min, z_max, num_slices):
+    """
+    Calculates the slice index for a z-value.
+    
+    Args:
+        z_value: z-coordinate of the point
+        z_min: Minimum z-limit
+        z_max: Maximum z-limit
+        num_slices: Number of slices M
+    
+    Returns:
+        Slice index (0 to num_slices-1)
+    """
+    if num_slices <= 0:
+        return 0
+
+    total_height = z_max - z_min
+    slice_height = total_height / num_slices
+    z_shifted = z_value - z_min
+    slice_idx = int(z_shifted / slice_height)
+
+    return max(0, min(num_slices - 1, slice_idx))
+
+def encode_height_mv3d(z_value, z_min, z_max, slice_idx, num_slices=5, output_range=(0, 255)):
+    """
+    Encodes height value to pixel value according to MV3D paper.
+    
+    The point cloud is divided equally into M slices. For each slice,
+    the height feature is computed as the maximum height of points in each cell.
+    
+    Paper: "the point cloud is divided equally into M slices. 
+            A height map is computed for each slice"
+    
+    Args:
+        z_value: The z-coordinate of the point (in meters)
+        z_min: Minimum z boundary (e.g., -2.73m for KITTI)
+        z_max: Maximum z boundary (e.g., 1.27m for KITTI)
+        slice_idx: Which height slice (0 to num_slices-1)
+        num_slices: Total number of height slices M
+        output_range: (min_pixel, max_pixel) for output, default (0, 255)
+    
+    Returns:
+        Encoded height value as integer pixel value [0, 255]
+    pass
+    """
+    if num_slices <= 0 or slice_idx < 0 or slice_idx >= num_slices:
+        return output_range[0]
+    
+    total_height = z_max- z_min
+    slice_height = total_height / num_slices
+    z_shifted = z_value - z_min
+
+    slice_z_min = slice_idx * slice_height
+    slice_z_max = (slice_idx + 1) * slice_height
+
+    if z_shifted < slice_z_min or z_shifted >= slice_z_max:
+        return output_range[0]
+    
+    height_in_slice = z_shifted - slice_z_min
+    normalized_height = height_in_slice / slice_height
+    normalized_height = min(1.0, max(0.0, normalized_height))
+    
+    out_min, out_max = output_range
+    pixel_value = normalized_height * (out_max - out_min) + out_min
+    
+    return int(round(pixel_value))
+
+def encode_intensity_mv3d(intensity, intensity_min=0.0, intensity_max=1.0, output_range=(0, 255)):
+    """
+    Encodes intensity value to pixel value according to MV3D paper.
+    
+    The intensity feature is the reflectance value of the point which has
+    the maximum height in each cell.
+    
+    Paper: "The intensity feature is the reflectance value of the point 
+            which has the maximum height in each cell"
+    
+    Args:
+        intensity: The intensity/reflectance value of the point
+                   KITTI: typically normalized to [0, 1]
+                   Some datasets: [0, 255]
+        intensity_min: Minimum intensity value (for normalization)
+        intensity_max: Maximum intensity value (for normalization)
+        output_range: (min_pixel, max_pixel) for output, default (0, 255)
+    
+    Returns:
+        Encoded intensity value as integer pixel value [0, 255]
+    """
+    if intensity_max == intensity_min:
+        return output_range[0]
+    
+    normalized_intensity = (intensity - intensity_min) / (intensity_max - intensity_min)
+
+    normalized_intensity = min(1.0, max(0.0, normalized_intensity))
+
+    out_min, out_max = output_range
+    pixel_value = normalized_intensity * (out_max - out_min) + out_min
+    
+    return int(round(pixel_value))
+
+def encode_density_mv3d(point_count, log_base=64, output_range=(0, 255)):
+    """
+    Encodes density (point count) to pixel value according to MV3D paper.
+    
+    The density indicates the number of points in each cell, normalized
+    using logarithmic scaling.
+    
+    Paper: "it is computed as min(1.0, log(N+1)/log(64)), 
+            where N is the number of points in the cell"
+    
+    Args:
+        point_count: Number of points N in the cell
+        log_base: Base for logarithmic normalization (default 64 as per paper)
+        output_range: (min_pixel, max_pixel) for output, default (0, 255)
+    
+    Returns:
+        Encoded density value as integer pixel value [0, 255]
+    """
+    from math import log
+
+    if point_count < 0:
+        return output_range[0]
+    
+    # Paper formula: min(1.0, log(N+1)/log(64))
+    if point_count == 0:
+        normalized_density = 0.0
+    else:
+        normalized_density = min(1.0, log(point_count + 1) / log(log_base))
+    
+    out_min, out_max = output_range
+    pixel_value = normalized_density * (out_max - out_min) + out_min
+    
+    return int(round(pixel_value))
+
+def get_sample(data, sample_idx, augment_idx=0, mode='train'):
+    
+    if mode == 'train':
+        sample = data[sample_idx][augment_idx]
+        
+        return {
+            'points': sample['points'],
+            'gt_boxes': sample['gt_boxes'],
+            'gt_names': sample['gt_names'],
+            'frame_id': sample['frame_id'],
+        }
+    else: # val
+        sample = data[sample_idx]
+        
+        return {
+            'points': sample['points'],
+            'gt_boxes': sample['annos']['gt_boxes_lidar'],
+            'gt_names': sample['annos']['name'],
+            'frame_id': sample['point_cloud']['lidar_idx'],
+        }
+
+def remove_points_outside_range(points, boundary_cond):
+    import numpy as np
+
+    if isinstance(boundary_cond, (list, tuple)):
+        x_min, y_min, z_min, x_max, y_max, z_max = boundary_cond
+    else:
+        # Boundary condition
+        x_min = boundary_cond['minX']
+        x_max = boundary_cond['maxX']
+        y_min = boundary_cond['minY']
+        y_max = boundary_cond['maxY']
+        z_min = boundary_cond['minZ']
+        z_max = boundary_cond['maxZ']
+    
+    # Remove the point out of range x,y,z
+    mask = (
+        (points[:, 0] >= x_min) & (points[:, 0] <= x_max) &
+        (points[:, 1] >= y_min) & (points[:, 1] <= y_max) &
+        (points[:, 2] >= z_min) & (points[:, 2] <= z_max)
+    )
+
+    return points[mask]
+    
+def pointcloud3d_to_bevimage2d(points, cfg, num_slices=5, filter_points=False, use_offset_mapping=False, offset_lidar=None):
+    """
+    Fast, vectorized BEV generation according to MV3D Paper.
+    
+    Uses the encoding functions:
+    - encode_density_mv3d(): min(1.0, log(N+1)/log(64))
+    - encode_height_mv3d(): Max z-value per cell, normalized
+    - encode_intensity_mv3d(): Reflectance of the highest point
+    
+    Coordinate mapping:
+        LiDAR x (front)  → BEV row (vertical, top=far)
+        LiDAR y (left)  → BEV col (horizontal, left=left)
+    
+    RGB channel assignment: R=Density, G=Height, B=Intensity
+    
+    Args:
+        points: (N, 4) Array [x, y, z, intensity]
+        cfg: EasyDict with POINT_CLOUD_RANGE, BEV_IMAGE_HEIGHT/WIDTH
+        filter_points: If True, points outside are filtered
+    
+    Returns:
+        bev_image: (H, W, 3) uint8 RGB
+    """
+    import numpy as np
+
+    pc_range = cfg.POINT_CLOUD_RANGE
+    x_min, y_min, z_min = pc_range[0], pc_range[1], pc_range[2]
+    _, _, z_max = pc_range[3], pc_range[4], pc_range[5]
+
+    bev_img_h = cfg.BEV_IMAGE_HEIGHT # 1024 px
+    bev_img_w = cfg.BEV_IMAGE_WIDTH # 1024 px
+    cell_size = cfg.get('CELL_SIZE', 0.06) # 0.06m
+
+    data_variant = cfg.get('DATA_VARIANT', 'default')
+    if data_variant == 'upsampled':
+        log_base = cfg.get('LIDAR_LAYERS_RBRS', 127)
+    else:
+        log_base = cfg.get('LIDAR_LAYERS', 64)
+
+    if filter_points:
+        points = remove_points_outside_range(points, pc_range)
+
+    # Coordinate mapping LiDAR -> BEV
+    rows = np.clip(((bev_img_h * cell_size) / 1.0 - points[:, 0]) / (bev_img_h * cell_size) * bev_img_h, 0, bev_img_h - 1).astype(np.int32)
+    cols = np.clip(((bev_img_w * cell_size) / 2.0 - points[:, 1]) / (bev_img_w * cell_size) * bev_img_w, 0, bev_img_w - 1).astype(np.int32)
+    
+    # Density mapping min(1.0, log(N+1)/log(base))
+    cell_idx = rows * bev_img_w + cols
+    unique_cells, counts = np.unique(cell_idx, return_counts=True)
+    
+    density_map = np.zeros((bev_img_h, bev_img_w), dtype=np.uint8)
+
+    for cell, count in zip(unique_cells, counts):
+        r, c = cell // bev_img_w, cell % bev_img_w
+        density_map[r, c] = encode_density_mv3d(point_count=count, log_base=log_base)
+
+    # Height slices mapping
+    height_slices = []
+
+    for slice_idx in range(num_slices):
+        slice_map = np.zeros((bev_img_h, bev_img_w), dtype=np.uint8)
+        
+        slice_mask = np.array([get_slice_index(z_value=z, z_min=z_min, z_max=z_max, num_slices=num_slices) == slice_idx for z in points[:, 2]])
+        
+        if np.any(slice_mask):
+            slice_rows = rows[slice_mask]
+            slice_cols = cols[slice_mask]
+            slice_z = points[:, 2][slice_mask]
+            
+            sort_idx = np.argsort(slice_z)
+            slice_rows_sorted = slice_rows[sort_idx]
+            slice_cols_sorted = slice_cols[sort_idx]
+            slice_z_sorted = slice_z[sort_idx]
+            
+            z_temp = np.full((bev_img_h, bev_img_w), -np.inf, dtype=np.float32)
+            z_temp[slice_rows_sorted, slice_cols_sorted] = slice_z_sorted
+            
+            valid_mask = z_temp > -np.inf
+            for r in range(bev_img_h):
+                for c in range(bev_img_w):
+                    if valid_mask[r, c]:
+                        slice_map[r, c] = encode_height_mv3d(
+                            z_value=z_temp[r, c],
+                            z_min=z_min,
+                            z_max=z_max,
+                            slice_idx=slice_idx,
+                            num_slices=num_slices, 
+                        )
+        
+        height_slices.append(slice_map)
+    
+    height_combined = np.maximum.reduce(height_slices)
+
+    # Intensity mapping
+    sort_idx = np.argsort(points[:, 2])
+    rows_sorted = rows[sort_idx]
+    cols_sorted = cols[sort_idx]
+    intensity_sorted = points[:, 3][sort_idx]
+
+    intensity_temp = np.full((bev_img_h, bev_img_w), -1.0, dtype=np.float32)
+    intensity_temp[rows_sorted, cols_sorted] = intensity_sorted
+    
+    intensity_map = np.zeros((bev_img_h, bev_img_w), dtype=np.uint8)
+    valid_mask = intensity_temp > 0
+    if np.any(valid_mask):
+        for r in range(bev_img_h):
+            for c in range(bev_img_w):
+                if intensity_temp[r, c] > 0:
+                    intensity_map[r, c] = encode_intensity_mv3d(
+                        intensity=intensity_temp[r, c],
+                        intensity_min=0.0,
+                        intensity_max=1.0
+                    )
+
+    bev_image = np.zeros((bev_img_h, bev_img_w, 3), dtype=np.uint8)
+
+    # BGR BEV Image 
+    bev_image[:, :, 0] = density_map # B(0) density
+    bev_image[:, :, 1] = intensity_map # G(1) intensity
+    bev_image[:, :, 2] = height_combined # R(2) height
+
+    return bev_image, height_slices
+
+def boxes3d_lidar_to_rotated_bev_boxes(bev_img, bev_image_height, bev_image_width, bev_res, boxes3d, min_points=5):
+    """
+    Args:
+        boxes3d: (N, 7 + C) [x, y, z, l, w, h, heading] in lidar coordinate
+
+    Returns:
+        rotated_bev_boxes: (8,) [x1, y1, x2, y2, x3, y3, x4, y4] in image coordinate (YOLO format)
+    """
+    x, y, z, l, w, h, heading, cls_idx = boxes3d
+    centroid = [x, y]
+
+    # source: https://github.com/maudzung/Complex-YOLOv4-Pytorch/blob/master/src/data_process/kitti_bev_utils.py
+    if cls_idx == 1: # Car
+        l = l + 0.4
+        w = w + 0.4
+    elif cls_idx == 2: # Pedestrian
+        l = l + 0.3
+        w = w + 0.3
+    elif cls_idx == 3: # Cyclist
+        l = l + 0.3
+        w = w + 0.3
+
+    yaw_bev = -heading # Invert yaw from LiDAR frame (CW) to Image frame (CCW), bc zero angle (0°) aligned differently in both systems
+
+    corners = np.array([
+        [centroid[0] + l/2, centroid[1] + w/2],  # 0: top-left
+        [centroid[0] + l/2, centroid[1] - w/2],  # 1: top-right
+        [centroid[0] - l/2, centroid[1] - w/2],  # 2: bottom-right
+        [centroid[0] - l/2, centroid[1] + w/2],  # 3: bottom-left
+    ])
+    """ 
+            Λ           
+    (x1,y1)---(x2,y2)     
+       |    |    |            
+       |    x    |      
+       |         |             
+    (x4,y4)---(x3,y3)        
+    """
+
+    R = np.array([[np.cos(yaw_bev), -np.sin(yaw_bev)],[np.sin(yaw_bev),  np.cos(yaw_bev)]])
+    """
+    2D-Rotation matrix of CW
+    [x'] = [cos(yaw) -sin(yaw)] * [x]
+    [y']   [sin(yaw)  cos(yaw)]   [y]
+    """
+
+    rotated_corners = np.dot(corners - centroid, R) + centroid      
+
+    x_img = bev_image_width / 2 - rotated_corners[:, 1] / bev_res # lidar world -y -> image x (u)
+    y_img = bev_image_height - rotated_corners[:, 0] / bev_res # lidar world x -> image y (v)
+
+    # Policy
+    # NOTE: KITTI readme: "...to avoid false positives - detections not visible on the image plane should be filtered."
+
+    # Check if all 2D BEV label corners are in image area
+    is_fully_visible = np.all(
+        (x_img >= 0) & (x_img < bev_image_width) &
+        (y_img >= 0) & (y_img < bev_image_height)
+    )
+    if not is_fully_visible:
+        return None  # skip box, if truncated (outside image borders)
+
+    # Determine ROI
+    x_min = max(0, int(np.floor(np.min(x_img))))
+    x_max = min(bev_image_width - 1, int(np.ceil(np.max(x_img))))
+    y_min = max(0, int(np.floor(np.min(y_img))))
+    y_max = min(bev_image_height - 1, int(np.ceil(np.max(y_img))))
+
+    roi = bev_img[y_min:y_max+1, x_min:x_max+1]
+    nonzero = np.count_nonzero(np.sum(roi, axis=2))
+    if nonzero < min_points:
+        return None  # skip box, if less than 5 points
+    
+    rotated_bev_boxes = np.stack([x_img, y_img], axis=1).reshape(-1) # x1, y1, x2, y2, x3, y3, x4, y4
+
+    return rotated_bev_boxes
+
+def show_bev_image_preview(bev_image, window_name="BEV Preview", BGR2RGB=True, win_size=(800, 800)):
+    if BGR2RGB:
+        bev_image = cv2.cvtColor(bev_image, cv2.COLOR_BGR2RGB)
+    else:
+        bev_image = bev_image
+    
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(window_name, *win_size)
+    cv2.startWindowThread()
+    cv2.imshow(window_name, bev_image)
+    key = cv2.waitKey(1)
+
+    return key
+
+def draw_bev_boxes(bev_image, bev_box, cls_idx, box_colormap=None, thickness=1, obj_direction_color=(255,0,0)):
+
+    rgb = box_colormap[int(cls_idx)]
+    color = tuple(int(255 * c) for c in rgb[::-1])  # RGB -> BGR
+
+    pts = np.array(bev_box, dtype=np.int32).reshape(4, 2)
+    for i in range(4):
+        pt1 = tuple(pts[i])
+        pt2 = tuple(pts[(i + 1) % 4])
+        if i == 0:
+            # front side of the object
+            cv2.line(bev_image, pt1, pt2, obj_direction_color, thickness=2)
+        else:
+            cv2.line(bev_image, pt1, pt2, color, thickness=thickness)
+    return bev_image
+
+def save_bev_images_and_boxes(save_path, frame_id, bev_image_bgr, valid_bev_boxes, augment_idx=0, 
+                              compression=[cv2.IMWRITE_PNG_COMPRESSION, 1], normalize_coords=False, 
+                              data_variant='default'):
+
+    bev_img_dir = os.path.join(save_path, f'bev_images_{data_variant}')
+    bev_annos_dir = os.path.join(save_path, 'bev_annos')
+    os.makedirs(bev_img_dir, exist_ok=True)
+    os.makedirs(bev_annos_dir, exist_ok=True)
+
+    aug_tag = AUGMENT_SHORT[augment_idx] if augment_idx < len(AUGMENT_SHORT) else f"aug{augment_idx}"
+    filename_img = f"{frame_id}_{aug_tag}.png"
+    filepath_img = os.path.join(bev_img_dir, filename_img)
+
+    bev_image_rgb = cv2.cvtColor(bev_image_bgr, cv2.COLOR_BGR2RGB)
+    cv2.imwrite(filename=filepath_img, img=bev_image_rgb , params=compression)
+
+    filename_anno = f"{frame_id}_{aug_tag}.txt"
+    filepath_anno = os.path.join(bev_annos_dir, filename_anno)
+
+    if normalize_coords:
+        valid_bev_boxes = normalize_pixels_to_range(np.array(valid_bev_boxes), bev_image_bgr.shape[0], bev_image_bgr.shape[1])
+
+    if data_variant == 'default': # save annos just once
+        with open(filepath_anno, "w") as f:
+            for cls_idx, box in valid_bev_boxes:
+                f.write(f"{cls_idx} " + " ".join([str(coord) for coord in box]) + "\n")
+
+def normalize_pixels_to_range(bev_boxes, img_height, img_width):
+    norm_boxes = bev_boxes.copy()
+
+    norm_boxes[:, 0::2] /= img_width # x
+    norm_boxes[:, 1::2] /= img_height # y
+
+    return norm_boxes
+    
