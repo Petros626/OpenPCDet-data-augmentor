@@ -25,11 +25,11 @@ def split_bbox(list_bbox):
     return bbox_z_np, bbox_l_np, bbox_h_np, bbox_w_np
 
 def get_statistic(arr, get_abnorm=False):
-    mean_arr = float(np.round(np.mean(arr), decimals=2))
-    median_arr = float(np.round(np.median(arr), decimals=2))
-    std_arr = float(np.round(np.std(arr), decimals=2))
-    min_arr = float(np.round(np.min(arr), decimals=2))
-    max_arr = float(np.round(np.max(arr), decimals=2))
+    mean_arr = round(float(np.mean(arr)), 2)
+    median_arr = round(float(np.median(arr)), 2)
+    std_arr = round(float(np.std(arr)), 2)
+    min_arr = round(float(np.min(arr)), 2)
+    max_arr = round(float(np.max(arr)), 2)
     statis = {"mean":mean_arr, "std": std_arr, "min": min_arr, "max": max_arr, "median": median_arr}
     if get_abnorm:
         abnorm_min = mean_arr - 3 * std_arr
@@ -65,22 +65,41 @@ def kitti_process(pkl_path, get_abnorm_idx=True, analyze_truncation=True):
     kitti_cyc_trunc = []
     all_truncation = []
 
-    for info in kitti_infos:
-        anno_info = info["annos"]
-        obj_number = anno_info["name"].shape[0]
-        for i in range(obj_number):
-            trunc_val = anno_info["truncated"][i]
-            all_truncation.append(trunc_val)
+    if isinstance(kitti_infos[0], list):
+        for frame_list in kitti_infos:
+            for sample in frame_list:
+                gt_names = sample.get('gt_names', [])
+                gt_boxes = sample.get("gt_boxes", [])
+                
+                num_boxes = gt_boxes.shape[0] if gt_boxes.ndim > 1 else (1 if gt_boxes.ndim == 1 and len(gt_boxes) > 0 else 0)
+                num_names = len(gt_names)
+                num_objects = min(num_names, num_boxes)
 
-            if anno_info["name"][i] == "Pedestrian":
-                kitti_ped_info.append(anno_info["gt_boxes_lidar"][i])
-                kitti_ped_trunc.append(trunc_val)
-            elif anno_info["name"][i] == "Car":
-                kitti_car_info.append(anno_info["gt_boxes_lidar"][i])
-                kitti_car_trunc.append(trunc_val)
-            elif anno_info["name"][i] == "Cyclist":
-                kitti_cyc_info.append(anno_info["gt_boxes_lidar"][i])
-                kitti_cyc_trunc.append(trunc_val)
+                for i in range(num_objects):
+                    name = gt_names[i]
+                    if name == 'Pedestrian':
+                        kitti_ped_info.append(gt_boxes[i])
+                    elif name == 'Car':
+                        kitti_car_info.append(gt_boxes[i])
+                    elif name == 'Cyclist':
+                        kitti_cyc_info.append(gt_boxes[i])
+    else:
+        for info in kitti_infos:
+            anno_info = info["annos"]
+            obj_number = anno_info["name"].shape[0]
+            for i in range(obj_number):
+                trunc_val = anno_info["truncated"][i]
+                all_truncation.append(trunc_val)
+
+                if anno_info["name"][i] == "Pedestrian":
+                    kitti_ped_info.append(anno_info["gt_boxes_lidar"][i])
+                    kitti_ped_trunc.append(trunc_val)
+                elif anno_info["name"][i] == "Car":
+                    kitti_car_info.append(anno_info["gt_boxes_lidar"][i])
+                    kitti_car_trunc.append(trunc_val)
+                elif anno_info["name"][i] == "Cyclist":
+                    kitti_cyc_info.append(anno_info["gt_boxes_lidar"][i])
+                    kitti_cyc_trunc.append(trunc_val)
 
     print(f"Car Counts: {len(kitti_car_info)}, Pedestrian: {len(kitti_ped_info)}, Cyclist: {len(kitti_cyc_info)}\n")
     print("Statistics for Cars:")
@@ -111,8 +130,11 @@ def kitti_process(pkl_path, get_abnorm_idx=True, analyze_truncation=True):
 
 
 if __name__ == "__main__":
-    #kitti_process("/home/rlab10/OpenPCDet/data/kitti/kitti_infos_train.pkl", get_abnorm_idx=False)
-    #kitti_process("/home/rlab10/OpenPCDet/data/kitti/kitti_val_dataset.pkl", get_abnorm_idx=False)
+    #kitti_process("/home/rlab10/OpenPCDet/data/kitti/kitti_val_dataset.pkl", get_abnorm_idx=False, analyze_truncation=False)
     # 7481 frames, has the most meaningful values for Statistical Normalization (SN)
     # Source: Train in Germany, Test in The USA: Making 3D Object Detectors Generalize.
-    kitti_process("/home/rlab10/OpenPCDet/data/kitti/kitti_infos_trainval.pkl", get_abnorm_idx=False, analyze_truncation=True)
+    #kitti_process("/home/rlab10/OpenPCDet/data/kitti/kitti_train_dataset.pkl", get_abnorm_idx=False, analyze_truncation=False)
+
+    # ZOD
+    #kitti_process("/home/rlab10/OpenPCDet/data/zod/zod_val_dataset.pkl", get_abnorm_idx=False, analyze_truncation=False)
+    kitti_process("/home/rlab10/OpenPCDet/data/zod/zod_train_dataset.pkl", get_abnorm_idx=False, analyze_truncation=False)
