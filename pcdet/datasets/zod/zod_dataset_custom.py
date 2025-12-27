@@ -295,8 +295,8 @@ class ZODDatasetCustom(DatasetTemplate):
 
         return mask
 
+    # source: https://github.com/griesbchr/3DTrans/blob/3174699105aefb3ed11e524606f707fd91239850/pcdet/datasets/zod/zod_dataset.py#L224
     def get_object_truncation_binary(self, corners, calib):
-        # source: https://github.com/griesbchr/3DTrans/blob/3174699105aefb3ed11e524606f707fd91239850/pcdet/datasets/zod/zod_dataset.py#L224
         corners_flat = corners.reshape(-1,3)
         
         # check if all corners are in Camera FoV
@@ -312,7 +312,7 @@ class ZODDatasetCustom(DatasetTemplate):
 
         return truncated # 0: non-truncated, 1: truncated
     
-    def get_object_truncation(self, box3d, calib, camera=Camera.FRONT, fov_range=245.0):
+    def get_object_truncation_wrong(self, box3d, calib, camera=Camera.FRONT, fov_range=245.0):
         """
             4 -------- 5            0 -------- 1         \_            _/
            /|         /|            |          |   obj 3 |\|  Camera  |/| obj 2
@@ -350,9 +350,42 @@ class ZODDatasetCustom(DatasetTemplate):
 
         return truncation # Float from 0 (non-truncated) to 1 (truncated), where truncated refers to the object leaving image boundaries
 
+    def get_object_truncation(self, box2d, image_shape):
+        """
+        Calculates the KITTI-style truncation value for a 2D bounding box.
+
+        KITTI definition:
+            "Float from 0 (non-truncated) to 1 (truncated), where truncated refers to the object leaving image boundaries."
+
+        Args:
+            box2d: 2D bounding box object with .xmin, .ymin, .xmax, .ymax, and .area attributes
+            image_shape: (height, width) of the image as a numpy array
+
+        Returns:
+            truncation: Float in [0, 1], where 0 means fully inside the image, 1 means fully outside.
+        """
+        img_w, img_h = image_shape[1], image_shape[0]
+        box_area = box2d.area
+       
+        x_min_clipped = np.clip(box2d.xmin, 0, img_w)
+        x_max_clipped = np.clip(box2d.xmax, 0, img_w)
+        y_min_clipped = np.clip(box2d.ymin, 0, img_h)
+        y_max_clipped = np.clip(box2d.ymax, 0, img_h)
+
+        visible_area = max(0, x_max_clipped - x_min_clipped) * max(0, y_max_clipped - y_min_clipped)
+
+        if box_area == 0:
+            return 1.0  # truncated
+        
+        # Truncation is the proportion of the box area outside the imagee
+        truncation = 1.0 - (visible_area / box_area)
+        # Ensure truncation is within [0, 1]
+        return np.clip(truncation, 0.0, 1.0)
+
     def get_label(self, idx): 
         zod_frame = self.zod_frames[idx]
         obj_list = zod_frame.get_annotation(AnnotationProject.OBJECT_DETECTION) # contains all necessary information
+        image_shape = self.get_image_shape(idx)
 
         # NOTE: Objects visible both in the camera image and the LiDAR
         # point cloud are also labeled with a 9-DOF 3D bounding box,
@@ -377,16 +410,19 @@ class ZODDatasetCustom(DatasetTemplate):
         # filter out objects that are not in class_names
         # only Bicycles with_rider = True flag
         if self.class_names is not None:
-            obj_list = [obj for obj in obj_list 
-                         if obj.subclass in self.class_names and
-                         (obj.subclass != "VulnerableVehicle_Bicycle" or obj.with_rider == True)] # Vehicle_Car, Pedestrian, VulnerableVehicle_Bicycle (with_rider:True)
+            obj_list = [obj for obj in obj_list if obj.subclass in self.class_names and
+                        (obj.subclass != "VulnerableVehicle_Bicycle" or obj.with_rider == True)] # Vehicle_Car, Pedestrian, VulnerableVehicle_Bicycle (with_rider:True)
         if len(obj_list) == 0:
             return None # skip empty samples
     
         # calculate truncation and insert occlusion from ZOD
         for obj in obj_list:
-            obj.truncation = self.get_object_truncation(box3d=obj.box3d, calib=zod_frame.calibration, fov_range=self.dataset_cfg.POINT_CLOUD_RANGE[3])
+            # old wrong
+            #obj.truncation = self.get_object_truncation_wrong(box3d=obj.box3d, calib=zod_frame.calibration, fov_range=self.dataset_cfg.POINT_CLOUD_RANGE[3])
+            
+            obj.truncation = self.get_object_truncation(box2d=obj.box2d, image_shape=image_shape)
             obj.occlusion = object3d_zod.zod_occlusion_to_kitti(obj.occlusion_level)
+
             # NOTE: If an object is fully seen through another vehicle’s windows it should have occlusion level None.
                 # ZOD: None: 0%, Light: 1% - 20%, Medium: 21% - 50%, Heavy: 51% - 80%, VeryHeavy: 81% - 100%
                 # KITTI: 0 = fully visible, 1 = partly occluded 2 = largely occluded, 3 = unknown
@@ -395,6 +431,7 @@ class ZODDatasetCustom(DatasetTemplate):
                     # ZOD 'Light', 'Medium' → KITTI 1 (partly occluded)
                     # ZOD 'Heavy', 'VeryHeavy' → KITTI 2 (largely occluded)
                     # other (e.g. unknown) → KITTI 3 (unknown)
+
             obj.level = object3d_zod.get_zod_obj_level(obj)
 
         # alternative future implementation for alpha, source: https://github.com/AlejandroBarrera/birdnet2/blob/5ceed811b289796d7d7420a064ecb079c80801ab/tools/val_net_BirdNetPlus.py 
@@ -520,18 +557,22 @@ class ZODDatasetCustom(DatasetTemplate):
                 l, w, h = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
                 gt_boxes_lidar = np.concatenate([loc, l, w, h, rots[..., np.newaxis]], axis=1)
                 annotations['gt_boxes_lidar'] = gt_boxes_lidar
+                annotations.pop('yaw')
 
                 # calculate observation angle alpha
+                # source: https://github.com/open-mmlab/OpenPCDet/blob/233f849829b6ac19afb8af8837a0246890908755/pcdet/datasets/kitti/kitti_utils.py#L5
                 gt_boxes_lidar = annotations['gt_boxes_lidar'].copy()
                 # only relevant for model predictions and KITTI
                 #gt_boxes_lidar[:, 2] -= gt_boxes_lidar[:, 5] / 2 
                 annotations['location'][:, 0] = -gt_boxes_lidar[:, 1]  # cam_x = -y_lidar
                 annotations['location'][:, 1] = -gt_boxes_lidar[:, 2]  # cam_y = -z_lidar
                 annotations['location'][:, 2] = gt_boxes_lidar[:, 0]  # cam_z = x_lidar
-                rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # orientation object
+                rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # rotation ry around Y-axis in camera coordinates
                 annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y # angle betw. cam & obj. centre
-                # limit alpha for mathematical correctness
+                # limit alpha, rotation_y for mathematical correctness
                 annotations['alpha'] = common_utils.limit_period(annotations['alpha'], offset=0.5, period=2 * np.pi) # [-pi, pi]
+                rotation_y = common_utils.limit_period(rotation_y, offset=0.5, period=2 * np.pi)
+                annotations['rotation_y'] = rotation_y
 
                 info['annos'] = annotations
 
@@ -683,8 +724,10 @@ class ZODDatasetCustom(DatasetTemplate):
                 l, w, h = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
                 gt_boxes_lidar = np.concatenate([loc, l, w, h, rots[..., np.newaxis]], axis=1)
                 annotations['gt_boxes_lidar'] = gt_boxes_lidar
+                annotations.pop('yaw')
 
                 # calculate observation angle alpha
+                # source: https://github.com/open-mmlab/OpenPCDet/blob/233f849829b6ac19afb8af8837a0246890908755/pcdet/datasets/kitti/kitti_utils.py#L5
                 """
                  ^ θl    ^ θ              
                   \     /
@@ -715,10 +758,12 @@ class ZODDatasetCustom(DatasetTemplate):
                 annotations['location'][:, 0] = -gt_boxes_lidar[:, 1]  # cam_x = -y_lidar
                 annotations['location'][:, 1] = -gt_boxes_lidar[:, 2]  # cam_y = -z_lidar
                 annotations['location'][:, 2] = gt_boxes_lidar[:, 0]  # cam_z = x_lidar
-                rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # orientation object
+                rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # rotation ry around Y-axis in camera coordinates
                 annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y # angle betw. cam & obj. centre
-                # limit alpha for mathematical correctness
+                # limit alpha, rotation_y for mathematical correctness
                 annotations['alpha'] = common_utils.limit_period(annotations['alpha'], offset=0.5, period=2 * np.pi) # [-pi, pi]
+                rotation_y = common_utils.limit_period(rotation_y, offset=0.5, period=2 * np.pi)
+                annotations['rotation_y'] = rotation_y
 
                 info['annos'] = annotations
 
@@ -993,21 +1038,20 @@ class ZODDatasetCustom(DatasetTemplate):
 
         input_dict['calib'] = calib
 
-        data_list, applied_augmentors = self.prepare_data_custom(data=input_dict) # jump to dataset.py
+        input_dict['cam_info'] = {
+            'truncated': annos['truncated'],
+            'occluded': annos['occluded'],
+            'alpha': annos['alpha'],
+            'bbox': annos['bbox'],
+            'dimensions': annos['dimensions'],
+            'location': annos['location'],
+            'rotation_y': annos['rotation_y'],
+            'score': annos['score'],
+            'difficulty': annos['difficulty'],
+            'image_shape': img_shape
+        }
 
-        if 'annos' in info:
-            for data_dict in data_list: 
-                data_dict['truncated'] = annos['truncated']
-                data_dict['occluded'] = annos['occluded']
-                data_dict['alpha'] = annos['alpha']
-                data_dict['bbox'] = annos['bbox']
-                data_dict['dimensions'] = annos['dimensions']
-                data_dict['location'] = annos['location']
-                data_dict['yaw'] = annos['yaw']
-                data_dict['box3d_corners'] = annos['box3d_corners']
-                data_dict['score'] = annos['score']
-                data_dict['difficulty'] = annos['difficulty']
-                data_dict['image_shape'] = img_shape
+        data_list, applied_augmentors = self.prepare_data_custom(data=input_dict) # jump to dataset.py
 
         return data_list, applied_augmentors
 
