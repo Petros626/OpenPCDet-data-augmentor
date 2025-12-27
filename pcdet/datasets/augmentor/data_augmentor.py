@@ -234,16 +234,12 @@ class DataAugmentor(object):
     
     def get_polar_image(self, points, with_limit_range=False):
         # source: https://github.com/griesbchr/3DTrans/blob/master/pcdet/utils/downsample_utils.py
-        if with_limit_range:
-            theta, phi = sampling_utils.compute_angles(points[:, :3])
-        else:
-            theta, phi = sampling_utils.compute_angles_wo_range(points[:, :3])
+        theta, phi = sampling_utils.compute_angles(points[:, :3]) if with_limit_range else sampling_utils.compute_angles_wo_range(points[:, :3])
 
-        r = np.sqrt(np.sum(points[:,:3]**2, axis=1))
         polar_image = points.copy()
         polar_image[:,0] = phi # Azimuth (φ)
         polar_image[:,1] = theta # Elevation (θ)
-        polar_image[:,2] = r 
+        polar_image[:,2] = np.sqrt(np.sum(points[:,:3]**2, axis=1)) # Range (r)
 
         return polar_image
 
@@ -353,16 +349,17 @@ class DataAugmentor(object):
         num_interp_beams = config.get('NUM_INTERP_BEAMS', 1)
 
         points_with_beam_labels = data_dict['points'] # must be [x, y, z, intensity, beam_label]
-        beam_label = points_with_beam_labels[:, -1].astype(int) # beam_label
-        points = points_with_beam_labels[:, :-1]
+        beam_label, points = points_with_beam_labels[:, -1].astype(int), points_with_beam_labels[:, :-1] # beam_label
 
         polar_image = self.get_polar_image(points, with_limit_range=False)
         phi = polar_image[:, 0]
 
         new_pcs = [points]
 
-        # get upsample propability 
+        # get upsample propability etc.
         beam_upsample_prob = config.get('BEAM_UPSAMPLE_PROB', 1)
+        phi_threshold = config['PHI_THRESHOLD']
+        r_threshold = config['R_THRESHOLD']
     
         for i in range(data_dict['num_aug_beams'] - 1): # 64 beams
             if np.random.rand() > beam_upsample_prob:
@@ -376,12 +373,12 @@ class DataAugmentor(object):
             delta_phi = np.abs(phi[curr_beam_mask, np.newaxis] - phi[np.newaxis, next_beam_mask])
             corr_idx = np.argmin(delta_phi, 1)
             min_delta = np.min(delta_phi, 1)
-            mask = min_delta < config['PHI_THRESHOLD']
+            mask = min_delta < phi_threshold
             curr_beam = polar_image[curr_beam_mask][mask]
             next_beam = polar_image[next_beam_mask][corr_idx[mask]]
             # mask out if r distance is too large (R_THRESHOLD)
             r_diff = np.abs(curr_beam[:, 2] - next_beam[:, 2])
-            mask = r_diff < config['R_THRESHOLD']
+            mask = r_diff < r_threshold
             curr_beam = curr_beam[mask]
             next_beam = next_beam[mask]
 
