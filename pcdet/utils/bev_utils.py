@@ -788,3 +788,13 @@ def draw_fov_bev(bev_image, calib, fov_range=245.0, color=(255, 255, 255), thick
 
     return bev_image
 
+def get_frame_ids(directory, ext):
+    import re
+
+    return set(
+        re.match(r"(\d{6})", f).group(1)
+        for f in os.listdir(directory)
+        if f.endswith(ext) and re.match(r"(\d{6})", f)
+    )
+
+
