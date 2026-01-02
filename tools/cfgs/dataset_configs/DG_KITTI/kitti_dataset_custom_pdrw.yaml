@@ -1,0 +1,4 @@
+# source: https://www.mdpi.com/1424-8220/23/1/322
+NUM_BEAMS: 64 # set to beam layers
+WIDTH: 2048 # set to empirical value of research papers, otherwise to 2083 (HDL-64E data sheet)
+MAX_RANGE: 60.0 # set to POINT_CLOUD_RANGE in config.yaml

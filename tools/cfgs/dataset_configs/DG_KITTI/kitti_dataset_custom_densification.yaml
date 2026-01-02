@@ -1,0 +1,8 @@
+# source: LiDAR-BEVMTN: Real-Time LiDAR Bird's-Eye View Multi-Task Perception Network for Autonomous Driving
+DATA_AUGMENTOR:
+    DISABLE_AUG_LIST: ['placeholder']
+    AUG_CONFIG_LIST:
+        - NAME: range_based_densification
+          NUM_POINT_COPIES: 3 # good trade-off value
+          DELTA_R_RANGE: [0.05, 0.1] # default [0.1, 0.3]
+      

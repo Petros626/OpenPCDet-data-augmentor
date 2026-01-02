@@ -1,0 +1,26 @@
+DATA_VARIANT: 'default'
+DATA_SPLIT: {
+    'train': True,
+    'val': False
+}
+
+# source: https://arxiv.org/abs/2104.10780
+LIDAR_LAYERS: 128
+
+# source: https://github.com/ultralytics/ultralytics/tree/main/ultralytics/cfg/models/11
+BEV_IMAGE_HEIGHT: 1024
+BEV_IMAGE_WIDTH: 1024
+# source: (x_max - x_min)/img_resolution
+CELL_SIZE: 0.06 # Cell resolution for the BEV grid [m], determines the granularity of the generated BEV image
+# source: https://arxiv.org/abs/1803.06199
+NUM_SLICES: 1 # MV3D uses 5 or more, Complex-YOLO 1
+POINT_CLOUD_RANGE: [0, -30, -2.73, 60, 30, 1.27]
+NORM_BOX_COORDS: True # [0...1]
+SAVE_FLAG: True
+
+BEV_PIXEL_MIN: 0 # Minimum pixel value for RGB
+BEV_PIXEL_MAX: 255 # Maximum pixel value for RGB
+
+PKL_TRAIN_DEFAULT: 'zod_train_dataset.pkl'
+PKL_VAL_DEFAULT: 'zod_val_dataset.pkl' 
+
