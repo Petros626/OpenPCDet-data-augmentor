@@ -225,24 +225,6 @@ class KittiDatasetCustom(DatasetTemplate):
 
         return pts_valid_flag
     
-    @staticmethod
-    def get_fov_flag_vertical(pts_rect, img_shape, calib):
-        """
-        Args:
-            pts_rect:
-            img_shape:
-            calib:
-
-        Returns:
-
-        """
-        pts_img, pts_rect_depth = calib.rect_to_img(pts_rect)
-        val_flag_2 = np.logical_and(pts_img[:, 1] >= 0, pts_img[:, 1] < img_shape[0]) # vertical FoV: 35°
-        val_vertical_flag = val_flag_2 # vertical only
-        pts_valid_flag = np.logical_and(val_vertical_flag, pts_rect_depth >= 0)
-
-        return pts_valid_flag
-    
     # Modified version of original get_infos() for pre-processing validation data
     def get_infos_val(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4, class_names=None, with_beam_label=False):
         import concurrent.futures as futures
