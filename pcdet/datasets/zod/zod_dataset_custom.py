@@ -131,10 +131,10 @@ class ZODDatasetCustom(DatasetTemplate):
         all_ids = [x.strip() for x in open(split_dir).readlines()] if split_dir.exists() else []
 
         if self.countries and len(self.countries) > 0:
-            candidate_ids = [x for x in all_ids if self.zod_frames[x].metadata.country_code in self.countries]
+           candidate_ids = [x for x in all_ids if self.zod_frames[x].metadata.country_code in self.countries]
 
         else:
-            candidate_ids = all_ids
+           candidate_ids = all_ids
 
         random_seed = self.dataset_cfg.SPLIT_CONFIG.RANDOM_SEED
         random.seed(random_seed)
