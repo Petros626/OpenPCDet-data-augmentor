@@ -1,4 +1,4 @@
-DATA_VARIANT: 'upsampled' # 'default', 'densified', 'interpolated', 'upsampled'
+DATA_VARIANT: 'default' # 'default', 'densified', 'interpolated', 'upsampled'
 DATA_SPLIT: {
     'train': True,
     'val': False
