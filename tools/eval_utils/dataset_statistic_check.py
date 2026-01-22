@@ -137,4 +137,4 @@ if __name__ == "__main__":
 
     # ZOD
     #kitti_process("/home/rlab10/OpenPCDet/data/zod/zod_val_dataset.pkl", get_abnorm_idx=False, analyze_truncation=False)
-    #kitti_process("/home/rlab10/OpenPCDet/data/zod/zod_train_dataset.pkl", get_abnorm_idx=False, analyze_truncation=False)
+    kitti_process("/home/rlab10/OpenPCDet/data/zod/zod_train_dataset.pkl", get_abnorm_idx=False, analyze_truncation=False)
