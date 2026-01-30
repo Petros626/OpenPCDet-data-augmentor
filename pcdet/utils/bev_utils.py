@@ -724,7 +724,7 @@ def normalize_pixels_to_range(bev_boxes, img_height, img_width):
 
     return norm_boxes
 
-def generate_groundtruth_dicts_bev(sample, valid_indices, output_path=None, frame_id=None):
+def generate_groundtruth_txts(sample, valid_indices, output_path=None, frame_id=None):
  
     gt_dict = {
         'name': np.array(sample['gt_names'])[valid_indices],
