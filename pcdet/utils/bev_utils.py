@@ -724,7 +724,7 @@ def normalize_pixels_to_range(bev_boxes, img_height, img_width):
 
     return norm_boxes
 
-def generate_groundtruth_txts(sample, valid_indices, output_path=None, frame_id=None):
+def generate_groundtruth_txts(sample, valid_indices, output_path=None, frame_id=None, offsets=True):
  
     gt_dict = {
         'name': np.array(sample['gt_names'])[valid_indices],
@@ -732,7 +732,7 @@ def generate_groundtruth_txts(sample, valid_indices, output_path=None, frame_id=
         'occluded': np.array(sample['occluded'])[valid_indices],
         'alpha': np.array(sample['alpha'])[valid_indices],
         'bbox': np.array(sample['bbox'])[valid_indices],
-        'dimensions': np.array(sample['dimensions'])[valid_indices],
+        'dimensions': np.array(sample['dimensions'])[valid_indices].copy(),
         'location': np.array(sample['location'])[valid_indices],
         'rotation_y': np.array(sample['rotation_y'])[valid_indices],
         'boxes_lidar': np.array(sample['gt_boxes'])[valid_indices]
@@ -744,6 +744,17 @@ def generate_groundtruth_txts(sample, valid_indices, output_path=None, frame_id=
         bbox = gt_dict['bbox']
         loc = gt_dict['location']
         dims = gt_dict['dimensions']  # (l, h, w) (LiDAR)
+
+        if offsets:
+            l_offsets = np.where(gt_dict['name'] == 'Car', 0.4, np.where(np.isin(gt_dict['name'], ['Pedestrian', 'Cyclist']), 0.3, 0.0))
+            w_offsets = np.where(gt_dict['name'] == 'Car', 0.4, np.where(np.isin(gt_dict['name'], ['Pedestrian', 'Cyclist']), 0.3, 0.0))
+
+            dims[:, 0] += l_offsets # l
+            dims[:, 2] += w_offsets # w
+        else:
+            print("[WARNING] generate_groundtruth_txts: offsets=False. "
+                  "Training labels use offsets (Car: +0.4, Ped/Cyc: +0.3). "
+                  "Mismatch may reduce AP scores!")
 
         with open(label_file, 'w') as f:
             for idx in range(len(bbox)):
