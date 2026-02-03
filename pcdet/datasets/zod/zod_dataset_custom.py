@@ -350,6 +350,7 @@ class ZODDatasetCustom(DatasetTemplate):
 
         return truncation # Float from 0 (non-truncated) to 1 (truncated), where truncated refers to the object leaving image boundaries
 
+    # source: https://github.com/zenseact/EdgeAnnotationZChallenge/blob/35afb0dcffd6b7ca3982a9a3ffbe50e9c92875f0/eval/convert_annotations_to_kitti.py#L102
     def get_object_truncation(self, box2d, image_shape):
         """
         Calculates the KITTI-style truncation value for a 2D bounding box.
