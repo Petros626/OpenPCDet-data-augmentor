@@ -743,7 +743,7 @@ def generate_groundtruth_txts(sample, valid_indices, output_path=None, frame_id=
         label_file = os.path.join(output_path, f"{frame_id}.txt")
         bbox = gt_dict['bbox']
         loc = gt_dict['location']
-        dims = gt_dict['dimensions']  # (l, h, w) (LiDAR)
+        dims = gt_dict['dimensions']  # stored as l, h, w (LiDAR)
 
         if offsets:
             l_offsets = np.where(gt_dict['name'] == 'Car', 0.4, np.where(np.isin(gt_dict['name'], ['Pedestrian', 'Cyclist']), 0.3, 0.0))
@@ -764,7 +764,7 @@ def generate_groundtruth_txts(sample, valid_indices, output_path=None, frame_id=
                          gt_dict['occluded'][idx],
                          gt_dict['alpha'][idx],
                          bbox[idx][0], bbox[idx][1], bbox[idx][2], bbox[idx][3], # xmin, ymin, xmax, ymax
-                         dims[idx][1], dims[idx][2], dims[idx][0],  # h, w, l (Camera)
+                         dims[idx][1], dims[idx][2], dims[idx][0],  # rearrange to h, w, l (Camera)
                          loc[idx][0], loc[idx][1], loc[idx][2], # x, y, z
                          gt_dict['rotation_y'][idx]),
                       file=f)
