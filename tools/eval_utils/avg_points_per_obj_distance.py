@@ -112,7 +112,6 @@ def compute_avg_points_per_object_over_distance(
     n_bins = int(np.ceil(max_dist / bin_size))
     bin_edges = np.arange(0.0, n_bins * bin_size + 1e-9, bin_size, dtype=np.float32)
 
-    # Listen für alle Punktzahlen pro Bin
     points_per_bin = [[] for _ in range(n_bins)]
 
     stats = {
