@@ -388,55 +388,41 @@ class ZODDatasetCustom(DatasetTemplate):
         obj_list = zod_frame.get_annotation(AnnotationProject.OBJECT_DETECTION) # contains all necessary information
         image_shape = self.get_image_shape(idx)
 
-        # NOTE: Objects visible both in the camera image and the LiDAR
-        # point cloud are also labeled with a 9-DOF 3D bounding box,
-        # described by the coordinate of the center of the box, length,
-        # width, height size, and the four quaternion rotation parameters
+        # NOTE: Objects visible both in the camera image and the LiDAR point cloud are also labeled with a 9-DOF 3D bounding box,
+        # described by the coordinate of the center of the box, length, width, height size, and the four quaternion rotation parameters
         # of the cuboid (i.e., qw, qx, qy, and qz).
         # -> filtering after box2d and box3d may result in some annotations outside the camera FoV, but visible in LiDAR (less annos)
-        # -> filtering after box3d only may result in more annotations, bc visible in LiDAR.
+        # -> filtering after box3d only may result in more annotations, bc visible in LiDAR
 
-        # filter out objects only without 3d anno
-        #obj_list = [obj for obj in obj_list if obj.box3d is not None]
-
-        # filter out objects without 2d&3d anno
+        # filter out objects without 2D&3D anno
         obj_list = [obj for obj in obj_list if obj.box2d is not None and obj.box3d is not None]
-
+        if len(obj_list) == 0:
+            return None
         # DEBUG print
         #if self.logger is not None:
         #    self.logger.info("filtered out %d objects without 3d anno" % (len(zod_frame.get_annotation(AnnotationProject.OBJECT_DETECTION)) - len(obj_list)))
-        #if len(obj_list) == 0:
-        #    return None
         
-        # filter out objects that are not in class_names
-        # only Bicycles with_rider = True flag
+        # filter out objects that are not in class_names (Vehicle_Car, Pedestrian, VulnerableVehicle_Bicycle), only Bicycles with_rider = True flag
         if self.class_names is not None:
-            obj_list = [obj for obj in obj_list if obj.subclass in self.class_names and
-                        (obj.subclass != "VulnerableVehicle_Bicycle" or obj.with_rider == True)] # Vehicle_Car, Pedestrian, VulnerableVehicle_Bicycle (with_rider:True)
+            obj_list = [obj for obj in obj_list if 
+                        obj.subclass in self.class_names and
+                        not obj.unclear and
+                        (obj.subclass != "VulnerableVehicle_Bicycle" or obj.with_rider == True)] 
+        
         if len(obj_list) == 0:
-            return None # skip empty samples
+            return None # skip empty samples  
     
         # calculate truncation and insert occlusion from ZOD
         for obj in obj_list:
-            # old wrong
-            #obj.truncation = self.get_object_truncation_wrong(box3d=obj.box3d, calib=zod_frame.calibration, fov_range=self.dataset_cfg.POINT_CLOUD_RANGE[3])
-            
             obj.truncation = self.get_object_truncation(box2d=obj.box2d, image_shape=image_shape)
             obj.occlusion = object3d_zod.zod_occlusion_to_kitti(obj.occlusion_level)
-
-            # NOTE: If an object is fully seen through another vehicle’s windows it should have occlusion level None.
-                # ZOD: None: 0%, Light: 1% - 20%, Medium: 21% - 50%, Heavy: 51% - 80%, VeryHeavy: 81% - 100%
-                # KITTI: 0 = fully visible, 1 = partly occluded 2 = largely occluded, 3 = unknown
-                # Mapping:
-                    # ZOD 'None' → KITTI 0 (fully visible)
-                    # ZOD 'Light', 'Medium' → KITTI 1 (partly occluded)
-                    # ZOD 'Heavy', 'VeryHeavy' → KITTI 2 (largely occluded)
-                    # other (e.g. unknown) → KITTI 3 (unknown)
-
             obj.level = object3d_zod.get_zod_obj_level(obj)
+            # NOTE: If an object is fully seen through another vehicle’s windows it should have occlusion level None.
+            # ZOD: None: 0%, Light: 1% - 20%, Medium: 21% - 50%, Heavy: 51% - 80%, VeryHeavy: 81% - 100%
+            # KITTI: 0 = fully visible, 1 = partly occluded 2 = largely occluded, 3 = unknown
+            # Mapping done in zod_occlusion_to_kitti():
 
         # alternative future implementation for alpha, source: https://github.com/AlejandroBarrera/birdnet2/blob/5ceed811b289796d7d7420a064ecb079c80801ab/tools/val_net_BirdNetPlus.py 
-
         # Project points to camera frame coordinates
         # calib = Calibration(calib_file)
         # p = calib.project_velo_to_rect(np.array([[obj3d.location.x,obj3d.location.y,obj3d.location.z]]))
@@ -450,6 +436,41 @@ class ZODDatasetCustom(DatasetTemplate):
         #    obj3d.alpha += 2*math.pi
 
         return obj_list
+
+    def get_label_test(self, idx):
+        zod_frame = self.zod_frames[idx]
+        obj_list = zod_frame.get_annotation(AnnotationProject.OBJECT_DETECTION) # contains all necessary information
+        image_shape = self.get_image_shape(idx)
+
+        # filter out objects without 2d&3d anno
+        obj_list = [obj for obj in obj_list if obj.box2d is not None and obj.box3d is not None]
+        # filter out objects that are not in class_names
+        filter_classes = self.class_names if self.class_names is not None else self.class_names
+        if filter_classes is not None:
+            obj_list = [obj for obj in obj_list if obj.subclass in filter_classes and
+                        (obj.subclass != "VulnerableVehicle_Bicycle" or obj.with_rider == True)]
+
+        if len(obj_list) == 0:
+            return None
+        
+        for obj in obj_list:
+            obj.truncation = self.get_object_truncation(box2d=obj.box2d, image_shape=image_shape)
+            obj.occlusion = object3d_zod.zod_occlusion_to_kitti(obj.occlusion_level)
+            obj.level = object3d_zod.get_zod_obj_level(obj)
+        
+        annotations = {}
+        annotations['name'] = np.array([obj.subclass for obj in obj_list])
+        annotations['truncated'] = np.array([obj.truncation for obj in obj_list])
+        annotations['occluded'] = np.array([obj.occlusion for obj in obj_list])
+        annotations['bbox'] = np.array([obj.box2d.xyxy for obj in obj_list], dtype=np.float32)
+        annotations['dimensions'] = np.array([obj.box3d.size for obj in obj_list])
+        annotations['location'] = np.array([obj.box3d.center for obj in obj_list])
+        annotations['yaw'] = np.array([obj.box3d.orientation.yaw_pitch_roll[0] for obj in obj_list])
+        annotations['box3d_corners'] = np.array([obj.box3d.corners for obj in obj_list])
+        annotations['score'] = np.array([-1.0 for _ in obj_list], dtype=np.float32)
+        annotations['difficulty'] = np.array([obj.level for obj in obj_list], dtype=np.int32)
+
+        return annotations
 
     def get_calib(self, idx):
         zod_frame = self.zod_frames[idx]
@@ -467,14 +488,13 @@ class ZODDatasetCustom(DatasetTemplate):
                 values = [float(x) for x in value.strip().split()]
                 calib[key.strip()] = values
 
-        return {'P2': calib['P2'], 'R0_rect': calib['R0_rect'], 'Tr_velo_to_cam': calib['Tr_velo_to_cam']}
-
+        return {'P2': calib['P2'], 'R0_rect': calib['R0_rect'], 'Tr_velo_to_cam': calib['Tr_velo_to_cam']}           
+        
     # Modified version of original get_infos() for pre-processing validation data
-    def get_infos_val(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4):
+    def get_infos_val(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4, class_names=None):
         import concurrent.futures as futures
         import time
 
-        #if self.mode == 'test': # validation mode
         from pcdet.datasets.processor.point_feature_encoder import PointFeatureEncoder
         
         point_feature_encoder = PointFeatureEncoder(self.dataset_cfg.POINT_FEATURE_ENCODING, point_cloud_range=self.point_cloud_range)
@@ -505,12 +525,12 @@ class ZODDatasetCustom(DatasetTemplate):
                 'cam_field_of_view': calib.cameras[camera].field_of_view.tolist(), # horizontal, vertical (degress)
                 'cam_undistortion': calib.cameras[camera].undistortion.tolist() , # 4 vector
                 'lidar_extrinsics': calib.lidars[lidar].extrinsics.transform.tolist(), #   
+                # KITTI
+                # TODO: save as np.array and not flat list like KITTI
+                'kitti_P2': self.kitti_calib['P2'],
+                'kitti_R0_rect': self.kitti_calib['R0_rect'],
+                'kitti_Tr_velo_to_cam':  self.kitti_calib['Tr_velo_to_cam']
             }
-            # KITTI
-            calib_info['kitti_P2'] = self.kitti_calib['P2']
-            calib_info['kitti_R0_rect'] = self.kitti_calib['R0_rect']
-            calib_info['kitti_Tr_velo_to_cam'] = self.kitti_calib['Tr_velo_to_cam'] 
-
             info['calib'] = calib_info
 
             if not has_label:
@@ -520,28 +540,26 @@ class ZODDatasetCustom(DatasetTemplate):
                 obj_list = self.get_label(sample_idx)
                 if obj_list is None:
                     return None # skip empty sample
-                #filtered_obj_list = [obj for obj in obj_list if obj.subclass in class_names]
 
-                annotations = {}
-                                
+                annotations = {}         
                 annotations['name'] = np.array([obj.subclass for obj in obj_list])
-                if self.dataset_cfg.get('MAP_MERGED_CLASSES', None) is not None:
-                    map_merge_class = self.dataset_cfg.MAP_MERGED_CLASSES
-                    annotations['name'] = np.vectorize(lambda name: map_merge_class[name], otypes=[str])(annotations['name'])
-                
                 annotations['truncated'] = np.array([obj.truncation for obj in obj_list])
                 annotations['occluded'] = np.array([obj.occlusion for obj in obj_list])
                 annotations['bbox'] = np.array([obj.box2d.xyxy for obj in obj_list], dtype=np.float32) # xmin, ymin, xmax, ymax
-                # no filtering for 2d box (see def get_label())
-                # annotations['bbox'] = np.array([[-1, -1, -1, -1] for _ in obj_list], dtype=np.float32) # dummy value, not used
+                # ATTENTION: ZOD doesn't provide annotations in Camera frame, these information are in the native LiDAR frame
+                # ----
                 annotations['dimensions'] = np.array([obj.box3d.size for obj in obj_list]) # l, w, h (LiDAR) format
                 annotations['location'] = np.array([obj.box3d.center for obj in obj_list]) # x, y, z (LiDAR) format
                 annotations['yaw'] = np.array([obj.box3d.orientation.yaw_pitch_roll[0] for obj in obj_list]) # rotation_z (LiDAR) format, from pyquaternion
                 annotations['box3d_corners'] = np.array([obj.box3d.corners for obj in obj_list])
+                # ----
                 annotations['score'] = np.array([-1.0 for _ in obj_list], dtype=np.float32) # dummy value, not provided
                 annotations['difficulty'] = np.array([obj.level for obj in obj_list], dtype=np.int32) # Easy, Moderate or Hard
                 
-                # Index array - filter out 'unclear' objects
+                if self.dataset_cfg.get('MAP_MERGED_CLASSES', None) is not None:
+                    map_merge_class = self.dataset_cfg.MAP_MERGED_CLASSES
+                    annotations['name'] = np.vectorize(lambda name: map_merge_class[name], otypes=[str])(annotations['name'])
+
                 num_objects = len(obj_list)
                 num_gt = len(annotations['name'])
                 index = list(range(num_objects)) + [-1] * (num_gt - num_objects)
@@ -549,7 +567,7 @@ class ZODDatasetCustom(DatasetTemplate):
 
                 annotations['location'] = annotations['location'] @ self.Tr_Zod_Lidar_to_Kitti_Lidar # rotate
                 annotations['location'][:,2] -= self.dataset_cfg.LIDAR_Z_SHIFT # shift
-                annotations['yaw'] = annotations['yaw'] - np.pi/2 # not + np.pi/2
+                annotations['yaw'] = annotations['yaw'] - np.pi/2 # not + np.pi/2, like: https://github.com/griesbchr/3DTrans/blob/3174699105aefb3ed11e524606f707fd91239850/pcdet/datasets/zod/zod_dataset.py#L320
                 annotations['yaw'] = common_utils.limit_period(annotations['yaw'], offset=0.5, period=2 * np.pi) # [-pi, pi]
 
                 loc = annotations['location'][:num_objects]
@@ -562,17 +580,20 @@ class ZODDatasetCustom(DatasetTemplate):
 
                 # calculate observation angle alpha
                 # source: https://github.com/open-mmlab/OpenPCDet/blob/233f849829b6ac19afb8af8837a0246890908755/pcdet/datasets/kitti/kitti_utils.py#L5
+                # NOTE: we let the geometric center (center of box) in ZOD default, not like the bottom edge (“bottom center”) as in KITTI.
                 gt_boxes_lidar = annotations['gt_boxes_lidar'].copy()
-                # only relevant for model predictions and KITTI
-                #gt_boxes_lidar[:, 2] -= gt_boxes_lidar[:, 5] / 2 
+                # gt_boxes_lidar[:, 2] -= gt_boxes_lidar[:, 5] / 2 
+        
+                # LiDAR to Camera
                 annotations['location'][:, 0] = -gt_boxes_lidar[:, 1]  # cam_x = -y_lidar
                 annotations['location'][:, 1] = -gt_boxes_lidar[:, 2]  # cam_y = -z_lidar
                 annotations['location'][:, 2] = gt_boxes_lidar[:, 0]  # cam_z = x_lidar
                 rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # rotation ry around Y-axis in camera coordinates
+                # limit alpha for mathematical correctness
                 annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y # angle betw. cam & obj. centre
-                # limit alpha, rotation_y for mathematical correctness
                 annotations['alpha'] = common_utils.limit_period(annotations['alpha'], offset=0.5, period=2 * np.pi) # [-pi, pi]
-                rotation_y = common_utils.limit_period(rotation_y, offset=0.5, period=2 * np.pi)
+                # limit rotation_y for mathematical correctness
+                rotation_y = common_utils.limit_period(rotation_y, offset=0.5, period=2 * np.pi) # [-pi, pi]
                 annotations['rotation_y'] = rotation_y
 
                 info['annos'] = annotations
@@ -610,10 +631,24 @@ class ZODDatasetCustom(DatasetTemplate):
                         num_points_in_gt[k] = flag.sum()
                     annotations['num_points_in_gt'] = num_points_in_gt
 
-                    temp_info = point_feature_encoder.forward(data_dict=info)
+                    info = point_feature_encoder.forward(data_dict=info)
                     # Note: Use DataProcessor to limit the cloud to pc range in config file
-                    info = data_processor.forward(data_dict=temp_info)
+                    info, mask = data_processor.forward(data_dict=info) # returned mask from mask_points_and_boxes_outside_range()
 
+                    # filter keys after mask
+                    info['annos']['truncated'] = info['annos']['truncated'][mask]
+                    info['annos']['occluded'] = info['annos']['occluded'][mask]
+                    info['annos']['bbox'] = info['annos']['bbox'][mask]
+                    info['annos']['dimensions'] = info['annos']['dimensions'][mask]
+                    info['annos']['location'] = info['annos']['location'][mask]
+                    info['annos']['box3d_corners'] = info['annos']['box3d_corners'][mask]
+                    info['annos']['score'] = info['annos']['score'][mask]
+                    info['annos']['difficulty'] = info['annos']['difficulty'][mask]
+                    info['annos']['index'] = info['annos']['index'][mask]
+                    info['annos']['alpha'] = info['annos']['alpha'][mask]
+                    info['annos']['rotation_y'] =  info['annos']['rotation_y'][mask]
+                    info['annos']['num_points_in_gt'] = info['annos']['num_points_in_gt'][mask]
+                
             return info
         
         sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
@@ -716,7 +751,7 @@ class ZODDatasetCustom(DatasetTemplate):
                 Why -pi/2?:
                 You rotate the coordinate system by +90°, so the yaw must be adjusted by -90° to maintain the object direction
                 """
-                annotations['yaw'] = annotations['yaw'] - np.pi/2 # not + np.pi/2, see above
+                annotations['yaw'] = annotations['yaw'] - np.pi/2 # see above
                 annotations['yaw'] = common_utils.limit_period(annotations['yaw'], offset=0.5, period=2 * np.pi) # [-pi, pi]
 
                 loc = annotations['location'][:num_objects]
