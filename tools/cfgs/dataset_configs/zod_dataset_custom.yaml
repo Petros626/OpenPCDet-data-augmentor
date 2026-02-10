@@ -27,7 +27,7 @@ MAP_MERGED_CLASSES: {
     "Vehicle_Car": "Car",
     "Pedestrian": "Pedestrian",
     "VulnerableVehicle_Bicycle": "Cyclist",
-    #'Unclear': 'DontCare',
+    'Unclear': 'DontCare',
   }
 
 DATASET_VERSION: 'full' # I just downloaded this version, change if needed
