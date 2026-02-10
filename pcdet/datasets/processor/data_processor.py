@@ -105,8 +105,7 @@ class DataProcessor(object):
             data_dict['annos']['gt_boxes_lidar'] = data_dict['annos']['gt_boxes_lidar'][mask]
             if 'name' in data_dict['annos']:
                 data_dict['annos']['name'] = data_dict['annos']['name'][mask]
-            
-        return data_dict
+        return data_dict, mask
 
     def shuffle_points(self, data_dict=None, config=None):
         if data_dict is None:
