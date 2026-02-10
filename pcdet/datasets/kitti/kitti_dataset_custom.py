@@ -284,6 +284,7 @@ class KittiDatasetCustom(DatasetTemplate):
                 num_gt = len(annotations['name'])
                 index = list(range(num_objects)) + [-1] * (num_gt - num_objects)
                 annotations['index'] = np.array(index, dtype=np.int32)
+                
                 # only the gt_boxes are inserted, which base on num_objects
                 loc = annotations['location'][:num_objects]
                 dims = annotations['dimensions'][:num_objects]
@@ -327,9 +328,9 @@ class KittiDatasetCustom(DatasetTemplate):
                         num_points_in_gt[k] = flag.sum()
                     annotations['num_points_in_gt'] = num_points_in_gt   
                     
-                    temp_info = point_feature_encoder.forward(data_dict=info)
+                    info = point_feature_encoder.forward(data_dict=info)
                     # Note: Use DataProcessor to limit the cloud to pc range in config file
-                    info = data_processor.forward(data_dict=temp_info)
+                    info = data_processor.forward(data_dict=info)
 
             return info 
             
