@@ -722,9 +722,8 @@ class ZODDatasetCustom(DatasetTemplate):
                 num_gt = len(annotations['name'])
                 index = list(range(num_objects)) + [-1] * (num_gt - num_objects)
                 annotations['index'] = np.array(index, dtype=np.int32)
-                
-                # rotate and shift coordinate system to match KITTI (90 deg around z axis and shift to LiDAR plane)
                 """
+                These lines convert ZOD LiDAR data to KITTI LiDAR data.
                 ZOD LiDAR Coordinate System:          KITTI LiDAR Coordinate System:
                             Z (up)                                Z (up)
                             |                                     |
@@ -734,23 +733,24 @@ class ZODDatasetCustom(DatasetTemplate):
                            /                                     
                           /                                     
                          X (right) 
-                """
-                # ZOD: X-right, Y-forward, Z-up (90° rotated compared to KITTI)
+                
+                ZOD: X-right, Y-forward, Z-up (90° rotated compared to KITTI)
                 # KITTI: X-forward, Y-left, Z-up
                 # Rotation matrix: 90° around Z-axis (counterclockwise)
                 # [x, y, z] @ R
                 # [x_kitti]   [-y_zod] * [0  -1  0]     
                 # [y_kitti] = [-x_zod] * [1   0  0]   
                 # [z_kitti]   [z_zod]  * [0   0  1] 
-
+                
+                KITTI: heading=0 -> object shows in x-direction, rotation is CW for positive values
+                ZOD: yaw=0 -> object shows in y-direction, rotation is CCW source: https://github.com/zenseact/zod/issues/32#issuecomment-1863026433
+                
+                Why -pi/2?:
+                After we rotate the coordinate system by +90° (self.Tr_Zod_Lidar_to_Kitti_Lidar), 
+                the yaw must be adjusted by -90° to maintain the object direction.
+                """
                 annotations['location'] = annotations['location'] @ self.Tr_Zod_Lidar_to_Kitti_Lidar # rotate
                 annotations['location'][:,2] -= self.dataset_cfg.LIDAR_Z_SHIFT # shift
-                """
-                ZOD: yaw=0 -> object shows in y-direction
-                KITTI: yaw=0 -> object shows in x-direction
-                Why -pi/2?:
-                You rotate the coordinate system by +90°, so the yaw must be adjusted by -90° to maintain the object direction
-                """
                 annotations['yaw'] = annotations['yaw'] - np.pi/2 # see above
                 annotations['yaw'] = common_utils.limit_period(annotations['yaw'], offset=0.5, period=2 * np.pi) # [-pi, pi]
 
@@ -762,9 +762,9 @@ class ZODDatasetCustom(DatasetTemplate):
                 annotations['gt_boxes_lidar'] = gt_boxes_lidar
                 annotations.pop('yaw')
 
-                # calculate observation angle alpha
-                # source: https://github.com/open-mmlab/OpenPCDet/blob/233f849829b6ac19afb8af8837a0246890908755/pcdet/datasets/kitti/kitti_utils.py#L5
+                # calculate observation angle alpha for ZOD data
                 """
+                source: https://github.com/open-mmlab/OpenPCDet/blob/233f849829b6ac19afb8af8837a0246890908755/pcdet/datasets/kitti/kitti_utils.py#L5
                  ^ θl    ^ θ              
                   \     /
                  __\___/_ 
