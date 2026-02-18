@@ -778,9 +778,9 @@ def generate_zod_groundtruth_txts(sample, valid_indices, output_path=None, frame
         'occluded': np.array(sample['occluded'])[valid_indices],
         'alpha': np.array(sample['alpha'])[valid_indices],
         'bbox': np.array(sample['bbox'])[valid_indices],
-        'dimensions': np.array(sample['dimensions'])[valid_indices].copy(),
-        'location': np.array(sample['location'])[valid_indices],
-        'rotation_y': np.array(sample['rotation_y'])[valid_indices],
+        #'dimensions': np.array(sample['dimensions'])[valid_indices].copy(),
+        #'location': np.array(sample['location'])[valid_indices],
+        #'rotation_y': np.array(sample['rotation_y'])[valid_indices],
         'boxes_lidar': np.array(sample['gt_boxes'])[valid_indices]
     }
 
@@ -788,8 +788,9 @@ def generate_zod_groundtruth_txts(sample, valid_indices, output_path=None, frame
         os.makedirs(output_path, exist_ok=True)
         label_file = os.path.join(output_path, f"{frame_id}.txt")
         bbox = gt_dict['bbox']
-        loc = gt_dict['location']
-        dims = gt_dict['dimensions']  # l, w, h (LiDAR)
+        loc = gt_dict['boxes_lidar'][:, 0:3] # x, y, z (LiDAR)
+        dims = gt_dict['boxes_lidar'][:, 3:6]  # l, w, h (LiDAR)
+        heading = gt_dict['boxes_lidar'][:, 6] # heading
 
         if offsets:
             l_offsets = np.where(gt_dict['name'] == 'Car', 0.4, np.where(np.isin(gt_dict['name'], ['Pedestrian', 'Cyclist']), 0.3, 0.0))
@@ -798,7 +799,7 @@ def generate_zod_groundtruth_txts(sample, valid_indices, output_path=None, frame
             dims[:, 0] += l_offsets # l
             dims[:, 1] += w_offsets # w
         else:
-            print("[WARNING] generate_groundtruth_txts: offsets=False. "
+            print("[WARNING] generate_zod_groundtruth_txts: offsets=False. "
                   "Training labels use offsets (Car: +0.4, Ped/Cyc: +0.3). "
                   "Mismatch may reduce AP scores!")
 
@@ -810,9 +811,9 @@ def generate_zod_groundtruth_txts(sample, valid_indices, output_path=None, frame
                          gt_dict['occluded'][idx],
                          gt_dict['alpha'][idx],
                          bbox[idx][0], bbox[idx][1], bbox[idx][2], bbox[idx][3], # xmin, ymin, xmax, ymax
-                         dims[idx][2], dims[idx][1], dims[idx][0],  # stored as h, w, l (Camera)
+                         dims[idx][0], dims[idx][1], dims[idx][2],  # stored as l, w ,h (LiDAR)
                          loc[idx][0], loc[idx][1], loc[idx][2], # x, y, z
-                         gt_dict['rotation_y'][idx]),
+                         heading[idx]), # rotation_z
                       file=f)
 
     return gt_dict
