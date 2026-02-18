@@ -50,8 +50,8 @@ class ZODDatasetCustom(DatasetTemplate):
         self.dataset_w_all_infos = [] # new list for custom augmented training dataset
         self.zod_infos = []
         self.Tr_Zod_Lidar_to_Kitti_Lidar = np.array([[0, -1, 0],
-                                                  [1,  0, 0], 
-                                                  [0,  0, 1]]) 
+                                                  [1, 0, 0], 
+                                                  [0, 0, 1]]) 
      
         self.include_zod_data(self.mode)
         self.kitti_calib = self.load_kitti_calib(self.kitti_calib_path)
@@ -437,41 +437,6 @@ class ZODDatasetCustom(DatasetTemplate):
 
         return obj_list
 
-    def get_label_test(self, idx):
-        zod_frame = self.zod_frames[idx]
-        obj_list = zod_frame.get_annotation(AnnotationProject.OBJECT_DETECTION) # contains all necessary information
-        image_shape = self.get_image_shape(idx)
-
-        # filter out objects without 2d&3d anno
-        obj_list = [obj for obj in obj_list if obj.box2d is not None and obj.box3d is not None]
-        # filter out objects that are not in class_names
-        filter_classes = self.class_names if self.class_names is not None else self.class_names
-        if filter_classes is not None:
-            obj_list = [obj for obj in obj_list if obj.subclass in filter_classes and
-                        (obj.subclass != "VulnerableVehicle_Bicycle" or obj.with_rider == True)]
-
-        if len(obj_list) == 0:
-            return None
-        
-        for obj in obj_list:
-            obj.truncation = self.get_object_truncation(box2d=obj.box2d, image_shape=image_shape)
-            obj.occlusion = object3d_zod.zod_occlusion_to_kitti(obj.occlusion_level)
-            obj.level = object3d_zod.get_zod_obj_level(obj)
-        
-        annotations = {}
-        annotations['name'] = np.array([obj.subclass for obj in obj_list])
-        annotations['truncated'] = np.array([obj.truncation for obj in obj_list])
-        annotations['occluded'] = np.array([obj.occlusion for obj in obj_list])
-        annotations['bbox'] = np.array([obj.box2d.xyxy for obj in obj_list], dtype=np.float32)
-        annotations['dimensions'] = np.array([obj.box3d.size for obj in obj_list])
-        annotations['location'] = np.array([obj.box3d.center for obj in obj_list])
-        annotations['yaw'] = np.array([obj.box3d.orientation.yaw_pitch_roll[0] for obj in obj_list])
-        annotations['box3d_corners'] = np.array([obj.box3d.corners for obj in obj_list])
-        annotations['score'] = np.array([-1.0 for _ in obj_list], dtype=np.float32)
-        annotations['difficulty'] = np.array([obj.level for obj in obj_list], dtype=np.int32)
-
-        return annotations
-
     def get_calib(self, idx):
         zod_frame = self.zod_frames[idx]
         
@@ -580,9 +545,7 @@ class ZODDatasetCustom(DatasetTemplate):
 
                 # calculate observation angle alpha
                 # source: https://github.com/open-mmlab/OpenPCDet/blob/233f849829b6ac19afb8af8837a0246890908755/pcdet/datasets/kitti/kitti_utils.py#L5
-                # NOTE: we let the geometric center (center of box) in ZOD default, not like the bottom edge (“bottom center”) as in KITTI.
                 gt_boxes_lidar = annotations['gt_boxes_lidar'].copy()
-                # gt_boxes_lidar[:, 2] -= gt_boxes_lidar[:, 5] / 2 
         
                 # LiDAR to Camera
                 annotations['location'][:, 0] = -gt_boxes_lidar[:, 1]  # cam_x = -y_lidar
@@ -659,6 +622,178 @@ class ZODDatasetCustom(DatasetTemplate):
         with futures.ThreadPoolExecutor(num_workers) as executor:
             #infos = executor.map(process_single_scene_val, sample_id_list)
             infos = [info for info in executor.map(process_single_scene_val, sample_id_list) if info is not None]
+        end_time = time.time()
+        print("Total time for loading infos: ", end_time - start_time, "s")
+        print("Loading speed for infos: ", len(sample_id_list) / (end_time - start_time), "sample/s")
+
+        return list(infos)
+    
+    def get_infos_val_test(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4, class_names=None):
+        import concurrent.futures as futures
+        import time
+
+        from pcdet.datasets.processor.point_feature_encoder import PointFeatureEncoder
+        
+        point_feature_encoder = PointFeatureEncoder(self.dataset_cfg.POINT_FEATURE_ENCODING, point_cloud_range=self.point_cloud_range)
+
+        from pcdet.datasets.processor.data_processor import DataProcessor 
+        data_processor = DataProcessor(self.dataset_cfg.DATA_PROCESSOR, point_cloud_range=self.point_cloud_range, 
+                                        training=self.training, num_point_features=self.point_feature_encoder.num_point_features)
+
+        def process_single_scene_val_test(sample_idx):
+            #print('ZODDatasetCustom: %s sample_idx: %s' % (self.split, sample_idx))
+
+            info = {}
+            pc_info = {'num_features': num_features, 'lidar_idx': sample_idx} # num_features: x,y,z,intensity
+            info['point_cloud'] = pc_info
+
+            image_info = {'image_idx': sample_idx, 'image_shape': self.get_image_shape(sample_idx)}
+            info['image'] = image_info
+
+            calib = self.get_calib(sample_idx)
+            camera = Camera.FRONT
+            lidar = Lidar.VELODYNE
+
+            # ZOD
+            calib_info = {
+                'cam_intrinsics': calib.cameras[camera].intrinsics.tolist(), # 3x3
+                'cam_extrinsics': calib.cameras[camera].extrinsics.transform.tolist(), # 4x4 
+                'cam_distortion': calib.cameras[camera].distortion.tolist(), # 4 vector
+                'cam_field_of_view': calib.cameras[camera].field_of_view.tolist(), # horizontal, vertical (degress)
+                'cam_undistortion': calib.cameras[camera].undistortion.tolist() , # 4 vector
+                'lidar_extrinsics': calib.lidars[lidar].extrinsics.transform.tolist(), #   
+                # KITTI
+                # TODO: save as np.array and not flat list like KITTI
+                'kitti_P2': self.kitti_calib['P2'],
+                'kitti_R0_rect': self.kitti_calib['R0_rect'],
+                'kitti_Tr_velo_to_cam':  self.kitti_calib['Tr_velo_to_cam']
+            }
+            info['calib'] = calib_info
+
+            if not has_label:
+                return info
+            
+            if has_label:
+                obj_list = self.get_label(sample_idx)
+                if obj_list is None:
+                    return None # skip empty sample
+                
+                annotations = {}         
+                annotations['name'] = np.array([obj.subclass for obj in obj_list])
+                annotations['truncated'] = np.array([obj.truncation for obj in obj_list])
+                annotations['occluded'] = np.array([obj.occlusion for obj in obj_list])
+                annotations['bbox'] = np.array([obj.box2d.xyxy for obj in obj_list], dtype=np.float32) # xmin, ymin, xmax, ymax
+                # ATTENTION: ZOD doesn't provide annotations in Camera frame, these information are in the native LiDAR frame
+                # ----
+                annotations['dimensions'] = np.array([obj.box3d.size for obj in obj_list]) # l, w, h (LiDAR) format
+                annotations['location'] = np.array([obj.box3d.center for obj in obj_list]) # x, y, z (LiDAR) format
+                annotations['yaw'] = np.array([obj.box3d.orientation.yaw_pitch_roll[0] for obj in obj_list]) # rotation_z (LiDAR) format, from pyquaternion
+                annotations['box3d_corners'] = np.array([obj.box3d.corners for obj in obj_list])
+                # ----
+                annotations['score'] = np.array([-1.0 for _ in obj_list], dtype=np.float32) # dummy value, not provided
+                annotations['difficulty'] = np.array([obj.level for obj in obj_list], dtype=np.int32) # Easy, Moderate or Hard
+                
+                if self.dataset_cfg.get('MAP_MERGED_CLASSES', None) is not None:
+                    map_merge_class = self.dataset_cfg.MAP_MERGED_CLASSES
+                    annotations['name'] = np.vectorize(lambda name: map_merge_class[name], otypes=[str])(annotations['name'])
+
+                num_objects = len(obj_list)
+                num_gt = len(annotations['name'])
+                index = list(range(num_objects)) + [-1] * (num_gt - num_objects)
+                annotations['index'] = np.array(index, dtype=np.int32)
+
+                #annotations['location'] = annotations['location'] @ self.Tr_Zod_Lidar_to_Kitti_Lidar # rotate
+                #annotations['location'][:,2] -= self.dataset_cfg.LIDAR_Z_SHIFT # shift
+                #annotations['yaw'] = annotations['yaw'] - np.pi/2 # not + np.pi/2, like: https://github.com/griesbchr/3DTrans/blob/3174699105aefb3ed11e524606f707fd91239850/pcdet/datasets/zod/zod_dataset.py#L320
+                #annotations['yaw'] = common_utils.limit_period(annotations['yaw'], offset=0.5, period=2 * np.pi) # [-pi, pi]
+
+                loc = annotations['location'][:num_objects]
+                dims = annotations['dimensions'][:num_objects]
+                rots = annotations['yaw'][:num_objects]
+                l, w, h = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
+                gt_boxes_lidar = np.concatenate([loc, l, w, h, rots[..., np.newaxis]], axis=1)
+                annotations['gt_boxes_lidar'] = gt_boxes_lidar
+                annotations.pop('yaw')
+
+                # calculate observation angle alpha
+                # source: https://github.com/open-mmlab/OpenPCDet/blob/233f849829b6ac19afb8af8837a0246890908755/pcdet/datasets/kitti/kitti_utils.py#L5
+                gt_boxes_lidar = annotations['gt_boxes_lidar'].copy()
+        
+                # LiDAR to Camera
+                annotations['location'][:, 0] = -gt_boxes_lidar[:, 1]  # cam_x = -y_lidar
+                annotations['location'][:, 1] = -gt_boxes_lidar[:, 2]  # cam_y = -z_lidar
+                annotations['location'][:, 2] = gt_boxes_lidar[:, 0]  # cam_z = x_lidar
+                rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # rotation ry around Y-axis in camera coordinates
+                # limit alpha for mathematical correctness
+                annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y # angle betw. cam & obj. centre
+                annotations['alpha'] = common_utils.limit_period(annotations['alpha'], offset=0.5, period=2 * np.pi) # [-pi, pi]
+                # limit rotation_y for mathematical correctness
+                rotation_y = common_utils.limit_period(rotation_y, offset=0.5, period=2 * np.pi) # [-pi, pi]
+                annotations['rotation_y'] = rotation_y
+
+                info['annos'] = annotations
+
+                if count_inside_pts:
+                    points = self.get_lidar(sample_idx, num_features=4) # points in ZOD coordinate system (see above)
+
+                    calib = self.get_calib(sample_idx)
+                    fov_flag = self.get_fov_flag(pts_lidar=points[:, 0:3], calib=calib) # FoV filtering in ZOD coordinate system
+                    pts_fov = points[fov_flag]
+
+                    if self.dataset_cfg.FOV_POINTS_ONLY: # (120°, 67°)
+                        # coordinate system alignment to KITTI
+                        #pts_fov[:, :3] = pts_fov[:, :3] @ self.Tr_Zod_Lidar_to_Kitti_Lidar # rotate points to KITTI coordinate system
+                        #pts_fov[:, 2] -= self.dataset_cfg.LIDAR_Z_SHIFT # shift points to KITTI coordinate system
+                        info['points'] = pts_fov
+                    elif self.dataset_cfg.KITTI_FOV_POINTS_ONLY: # (90°, 35°)
+                        fov_flag_k = self.get_fov_flag(pts_lidar=points[:, 0:3], calib=calib, use_kitti_fov=self.dataset_cfg.KITTI_FOV)
+                        pts_fov_k = points[fov_flag_k]
+                        # coordinate system alignment to KITTI
+                        #pts_fov_k[:, :3] = pts_fov_k[:, :3] @ self.Tr_Zod_Lidar_to_Kitti_Lidar # rotate points to KITTI coordinate system
+                        #pts_fov_k[:, 2] -= self.dataset_cfg.LIDAR_Z_SHIFT # shift points to KITTI coordinate system
+                        info['points'] = pts_fov_k
+                    else:
+                        # coordinate system alignment to KITTI
+                        #points[:, :3] = points[:, :3] @ self.Tr_Zod_Lidar_to_Kitti_Lidar # rotate points to KITTI coordinate system
+                        #points[:, 2] -= self.dataset_cfg.LIDAR_Z_SHIFT # shift points to KITTI coordinate system
+                        info['points'] = points
+
+                    corners_lidar = box_utils.boxes_to_corners_3d(gt_boxes_lidar) # we need exact the same corner order, ZOD defines different one
+                    num_points_in_gt = -np.ones(num_gt, dtype=np.int32)
+
+                    for k in range(num_objects):
+                        flag = box_utils.in_hull(pts_fov[:, 0:3], corners_lidar[k])
+                        num_points_in_gt[k] = flag.sum()
+                    annotations['num_points_in_gt'] = num_points_in_gt
+
+                    info = point_feature_encoder.forward(data_dict=info)
+                    # Note: Use DataProcessor to limit the cloud to pc range in config file
+                    info, mask = data_processor.forward(data_dict=info) # returned mask from mask_points_and_boxes_outside_range()
+
+                    # filter keys after mask
+                    info['annos']['truncated'] = info['annos']['truncated'][mask]
+                    info['annos']['occluded'] = info['annos']['occluded'][mask]
+                    info['annos']['bbox'] = info['annos']['bbox'][mask]
+                    info['annos']['dimensions'] = info['annos']['dimensions'][mask]
+                    info['annos']['location'] = info['annos']['location'][mask]
+                    info['annos']['box3d_corners'] = info['annos']['box3d_corners'][mask]
+                    info['annos']['score'] = info['annos']['score'][mask]
+                    info['annos']['difficulty'] = info['annos']['difficulty'][mask]
+                    info['annos']['index'] = info['annos']['index'][mask]
+                    info['annos']['alpha'] = info['annos']['alpha'][mask]
+                    info['annos']['rotation_y'] =  info['annos']['rotation_y'][mask]
+                    info['annos']['num_points_in_gt'] = info['annos']['num_points_in_gt'][mask]
+                
+            return info
+        
+        sample_id_list = sample_id_list if sample_id_list is not None else self.sample_id_list
+
+        #if self.mode == 'test': # val mode
+        start_time = time.time()
+        # improve the velocity
+        with futures.ThreadPoolExecutor(num_workers) as executor:
+            #infos = executor.map(process_single_scene_val, sample_id_list)
+            infos = [info for info in executor.map(process_single_scene_val_test, sample_id_list) if info is not None]
         end_time = time.time()
         print("Total time for loading infos: ", end_time - start_time, "s")
         print("Loading speed for infos: ", len(sample_id_list) / (end_time - start_time), "sample/s")
