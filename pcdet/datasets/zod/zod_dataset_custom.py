@@ -544,21 +544,22 @@ class ZODDatasetCustom(DatasetTemplate):
                 annotations.pop('yaw')
 
                 # calculate observation angle alpha
+                # NOTE: calculation seems not correct for ZOD (use ZOD API with transformed 3DBBoxes)
                 # source: https://github.com/open-mmlab/OpenPCDet/blob/233f849829b6ac19afb8af8837a0246890908755/pcdet/datasets/kitti/kitti_utils.py#L5
                 gt_boxes_lidar = annotations['gt_boxes_lidar'].copy()
         
-                # LiDAR to Camera
+                # KITTI LiDAR to KITTI Camera
                 annotations['location'][:, 0] = -gt_boxes_lidar[:, 1]  # cam_x = -y_lidar
                 annotations['location'][:, 1] = -gt_boxes_lidar[:, 2]  # cam_y = -z_lidar
                 annotations['location'][:, 2] = gt_boxes_lidar[:, 0]  # cam_z = x_lidar
                 rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # rotation ry around Y-axis in camera coordinates
-                # limit alpha for mathematical correctness
-                annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y # angle betw. cam & obj. centre
-                annotations['alpha'] = common_utils.limit_period(annotations['alpha'], offset=0.5, period=2 * np.pi) # [-pi, pi]
-                # limit rotation_y for mathematical correctness
-                rotation_y = common_utils.limit_period(rotation_y, offset=0.5, period=2 * np.pi) # [-pi, pi]
+                rotation_y = common_utils.limit_period(rotation_y, offset=0.5, period=2 * np.pi)
                 annotations['rotation_y'] = rotation_y
-
+                # TODO: check if calculation is correct, using LiDAR or Camera frame for calculation?
+                #annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y # angle betw. cam & obj. centre
+                annotations['alpha'] = rotation_y - np.arctan2(annotations['location'][:, 0], annotations['location'][:, 2]) # x, z (Camera coordinates)
+                annotations['alpha'] = common_utils.limit_period(annotations['alpha'], offset=0.5, period=2 * np.pi)
+        
                 info['annos'] = annotations
 
                 if count_inside_pts:
@@ -628,7 +629,7 @@ class ZODDatasetCustom(DatasetTemplate):
 
         return list(infos)
     
-    def get_infos_val_test(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4, class_names=None):
+    def get_infos_val_zod(self, num_workers=4, has_label=True, count_inside_pts=True, sample_id_list=None, num_features=4, class_names=None):
         import concurrent.futures as futures
         import time
 
@@ -640,7 +641,7 @@ class ZODDatasetCustom(DatasetTemplate):
         data_processor = DataProcessor(self.dataset_cfg.DATA_PROCESSOR, point_cloud_range=self.point_cloud_range, 
                                         training=self.training, num_point_features=self.point_feature_encoder.num_point_features)
 
-        def process_single_scene_val_test(sample_idx):
+        def process_single_scene_val_zod(sample_idx):
             #print('ZODDatasetCustom: %s sample_idx: %s' % (self.split, sample_idx))
 
             info = {}
@@ -716,20 +717,21 @@ class ZODDatasetCustom(DatasetTemplate):
                 annotations.pop('yaw')
 
                 # calculate observation angle alpha
+                # NOTE: calculation seems not correct for ZOD (use ZOD API with transformed 3DBBoxes)
                 # source: https://github.com/open-mmlab/OpenPCDet/blob/233f849829b6ac19afb8af8837a0246890908755/pcdet/datasets/kitti/kitti_utils.py#L5
                 gt_boxes_lidar = annotations['gt_boxes_lidar'].copy()
         
-                # LiDAR to Camera
-                annotations['location'][:, 0] = -gt_boxes_lidar[:, 1]  # cam_x = -y_lidar
-                annotations['location'][:, 1] = -gt_boxes_lidar[:, 2]  # cam_y = -z_lidar
-                annotations['location'][:, 2] = gt_boxes_lidar[:, 0]  # cam_z = x_lidar
+                # ZOD LiDAR to ZOD Camera
+                annotations['location'][:, 0] = gt_boxes_lidar[:, 0]  # cam_x = x_lidar
+                annotations['location'][:, 1] = -gt_boxes_lidar[:, 2] # cam_y = -z_lidar
+                annotations['location'][:, 2] = gt_boxes_lidar[:, 1]  # cam_z = y_lidar
                 rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # rotation ry around Y-axis in camera coordinates
-                # limit alpha for mathematical correctness
-                annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y # angle betw. cam & obj. centre
-                annotations['alpha'] = common_utils.limit_period(annotations['alpha'], offset=0.5, period=2 * np.pi) # [-pi, pi]
-                # limit rotation_y for mathematical correctness
                 rotation_y = common_utils.limit_period(rotation_y, offset=0.5, period=2 * np.pi) # [-pi, pi]
                 annotations['rotation_y'] = rotation_y
+                # TODO: check if calculation is correct, using LiDAR or Camera frame for calculation?
+                #annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 0], gt_boxes_lidar[:, 1]) + rotation_y # angle betw. cam & obj. centre
+                annotations['alpha'] = rotation_y - np.arctan2(annotations['location'][:, 0], annotations['location'][:, 2]) # x, z (Camera coordinates)
+                annotations['alpha'] = common_utils.limit_period(annotations['alpha'], offset=0.5, period=2 * np.pi) # [-pi, pi]
 
                 info['annos'] = annotations
 
@@ -793,7 +795,7 @@ class ZODDatasetCustom(DatasetTemplate):
         # improve the velocity
         with futures.ThreadPoolExecutor(num_workers) as executor:
             #infos = executor.map(process_single_scene_val, sample_id_list)
-            infos = [info for info in executor.map(process_single_scene_val_test, sample_id_list) if info is not None]
+            infos = [info for info in executor.map(process_single_scene_val_zod, sample_id_list) if info is not None]
         end_time = time.time()
         print("Total time for loading infos: ", end_time - start_time, "s")
         print("Loading speed for infos: ", len(sample_id_list) / (end_time - start_time), "sample/s")
@@ -930,10 +932,12 @@ class ZODDatasetCustom(DatasetTemplate):
                 annotations['location'][:, 1] = -gt_boxes_lidar[:, 2]  # cam_y = -z_lidar
                 annotations['location'][:, 2] = gt_boxes_lidar[:, 0]  # cam_z = x_lidar
                 rotation_y = -gt_boxes_lidar[:, 6] - np.pi / 2.0 # rotation ry around Y-axis in camera coordinates
-                annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y # angle betw. cam & obj. centre
-                # limit alpha, rotation_y for mathematical correctness
-                annotations['alpha'] = common_utils.limit_period(annotations['alpha'], offset=0.5, period=2 * np.pi) # [-pi, pi]
                 rotation_y = common_utils.limit_period(rotation_y, offset=0.5, period=2 * np.pi)
+                # TODO: check if calculation is correct, using LiDAR or Camera frame for calculation?
+                #annotations['alpha'] = -np.arctan2(-gt_boxes_lidar[:, 1], gt_boxes_lidar[:, 0]) + rotation_y # angle betw. cam & obj. centre
+                annotations['alpha'] = rotation_y - np.arctan2(annotations['location'][:, 0], annotations['location'][:, 2]) # x, yz (Camera coordinates)
+                annotations['alpha'] = common_utils.limit_period(annotations['alpha'], offset=0.5, period=2 * np.pi) 
+                
                 annotations['rotation_y'] = rotation_y
 
                 info['annos'] = annotations
