@@ -10,6 +10,7 @@ DATA_PATH: '../data/zod'
 # BEVDetNet paper: x(0, 60), y(-30, 30), z(-2.73, 1.27)
 # [x_min, y_min, z_min, x_max, y_max, z_max]
 POINT_CLOUD_RANGE: [0, -30, -2.73, 60, 30, 1.27] # ZOD
+#POINT_CLOUD_RANGE: [-30, 0, -2.73, 30, 60, 1.27] # ZOD coordinate system
 USE_VLS128_ONLY: True # ZOD uses VLS128 (front) and 2x VLP-16 (side)
 
 # Original ZOD coordinate system
