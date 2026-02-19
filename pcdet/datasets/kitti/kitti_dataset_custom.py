@@ -292,7 +292,7 @@ class KittiDatasetCustom(DatasetTemplate):
                 loc_lidar = calib.rect_to_lidar(loc)
                 l, h, w = dims[:, 0:1], dims[:, 1:2], dims[:, 2:3]
                 # only relevant for KITTI!
-                loc_lidar[:, 2] += h[:, 0] / 2 # from the box centre to the box bottom edge (floor)
+                loc_lidar[:, 2] += h[:, 0] / 2 # from the box bottom edge (floor) to the box centre  
                 gt_boxes_lidar = np.concatenate([loc_lidar, l, w, h, -(np.pi / 2 + rots[..., np.newaxis])], axis=1) # Cam -> LiDAR box
                 annotations['gt_boxes_lidar'] = gt_boxes_lidar
 
