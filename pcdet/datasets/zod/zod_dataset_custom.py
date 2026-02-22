@@ -420,7 +420,7 @@ class ZODDatasetCustom(DatasetTemplate):
             # NOTE: If an object is fully seen through another vehicle’s windows it should have occlusion level None.
             # ZOD: None: 0%, Light: 1% - 20%, Medium: 21% - 50%, Heavy: 51% - 80%, VeryHeavy: 81% - 100%
             # KITTI: 0 = fully visible, 1 = partly occluded 2 = largely occluded, 3 = unknown
-            # Mapping done in zod_occlusion_to_kitti():
+            # Mapping done in zod_occlusion_to_kitti().
 
         # alternative future implementation for alpha, source: https://github.com/AlejandroBarrera/birdnet2/blob/5ceed811b289796d7d7420a064ecb079c80801ab/tools/val_net_BirdNetPlus.py 
         # Project points to camera frame coordinates
@@ -482,19 +482,14 @@ class ZODDatasetCustom(DatasetTemplate):
             camera = Camera.FRONT
             lidar = Lidar.VELODYNE
 
-            # ZOD
+            # ZOD # TODO: save as np.array and not flat list like KITTI
             calib_info = {
                 'cam_intrinsics': calib.cameras[camera].intrinsics.tolist(), # 3x3
                 'cam_extrinsics': calib.cameras[camera].extrinsics.transform.tolist(), # 4x4 
                 'cam_distortion': calib.cameras[camera].distortion.tolist(), # 4 vector
                 'cam_field_of_view': calib.cameras[camera].field_of_view.tolist(), # horizontal, vertical (degress)
                 'cam_undistortion': calib.cameras[camera].undistortion.tolist() , # 4 vector
-                'lidar_extrinsics': calib.lidars[lidar].extrinsics.transform.tolist(), #   
-                # KITTI
-                # TODO: save as np.array and not flat list like KITTI
-                'kitti_P2': self.kitti_calib['P2'],
-                'kitti_R0_rect': self.kitti_calib['R0_rect'],
-                'kitti_Tr_velo_to_cam':  self.kitti_calib['Tr_velo_to_cam']
+                'lidar_extrinsics': calib.lidars[lidar].extrinsics.transform.tolist(), # ??
             }
             info['calib'] = calib_info
 
@@ -655,19 +650,14 @@ class ZODDatasetCustom(DatasetTemplate):
             camera = Camera.FRONT
             lidar = Lidar.VELODYNE
 
-            # ZOD
+            # ZOD TODO: save as np.array and not flat list like KITTI
             calib_info = {
                 'cam_intrinsics': calib.cameras[camera].intrinsics.tolist(), # 3x3
                 'cam_extrinsics': calib.cameras[camera].extrinsics.transform.tolist(), # 4x4 
                 'cam_distortion': calib.cameras[camera].distortion.tolist(), # 4 vector
                 'cam_field_of_view': calib.cameras[camera].field_of_view.tolist(), # horizontal, vertical (degress)
                 'cam_undistortion': calib.cameras[camera].undistortion.tolist() , # 4 vector
-                'lidar_extrinsics': calib.lidars[lidar].extrinsics.transform.tolist(), #   
-                # KITTI
-                # TODO: save as np.array and not flat list like KITTI
-                'kitti_P2': self.kitti_calib['P2'],
-                'kitti_R0_rect': self.kitti_calib['R0_rect'],
-                'kitti_Tr_velo_to_cam':  self.kitti_calib['Tr_velo_to_cam']
+                'lidar_extrinsics': calib.lidars[lidar].extrinsics.transform.tolist(), #  
             }
             info['calib'] = calib_info
 
