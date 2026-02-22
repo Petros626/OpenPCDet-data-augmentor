@@ -5,8 +5,8 @@ def zod_occlusion_to_kitti(zod_occlusion):
         'Light': 1,
         'Medium': 1,
         'Heavy': 2,
-        'VeryHeavy': 2,
-        'Undefined': 2  # "If undefined we assume the worst"
+        'VeryHeavy': 2
+        #'Undefined': 2  # valid only ZOD1-SDK: "If undefined we assume the worst"
     }
 
     return mapping.get(zod_occlusion, 3)  # 3 = unknown
