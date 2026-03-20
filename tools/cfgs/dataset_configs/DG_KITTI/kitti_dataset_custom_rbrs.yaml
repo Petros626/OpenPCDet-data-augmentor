@@ -3,7 +3,7 @@ DATA_AUGMENTOR:
     DISABLE_AUG_LIST: ['placeholder']
     AUG_CONFIG_LIST:
         - NAME: random_beam_re_sampling
-          BEAM_UPSAMPLE_PROB: 1 # upsample all point clouds
+          BEAM_UPSAMPLE_PROB: 0.75
           # KITTI: 0.1728° × π / 180 ≈ 0.00301592894 rad (HDL-64E, 600 RPM data sheet)
           PHI_THRESHOLD: 0.00301592894 # rad
           R_THRESHOLD: 2.0 # meters
