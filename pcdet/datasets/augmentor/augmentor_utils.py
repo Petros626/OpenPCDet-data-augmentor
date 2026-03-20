@@ -768,6 +768,7 @@ def densify_points_along_range(points, num_point_copies=1, delta_r_range=(0.1, 0
     return np.vstack(new_points)  
 
 # source: https://github.com/tusen-ai/RangeDet/blob/1df87b2d9aa9ef3f77ad634c2656b96867c7eac8/datasets/create_range_image_in_kitti.py#L107
+# TODO: https://www.mdpi.com/2079-9292/10/11/1224 another algo for better range image
 def get_range_image_hdl64e(points, incl, height):
     incl_deg = incl * 180 / 3.1415
     # print(incl - np.roll(incl, 1))
