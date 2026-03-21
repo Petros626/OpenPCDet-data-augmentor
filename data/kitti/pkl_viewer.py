@@ -19,7 +19,7 @@ with open(path, 'rb') as f:
     kitti_infos = pickle.load(f)
 
 list_kitti = list(kitti_infos)
-first_entry  = kitti_infos[0]
+first_entry  = kitti_infos[4]
 
 print(first_entry)
 

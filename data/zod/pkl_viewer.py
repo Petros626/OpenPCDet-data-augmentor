@@ -1,7 +1,9 @@
 import pickle
 
 #path = '/home/rlab10/OpenPCDet/data/zod/zod_infos_train_full.pkl'
+#path = '/home/rlab10/OpenPCDet/data/zod/zod_val_dataset.pkl'
 path = '/home/rlab10/OpenPCDet/data/zod/zod_val_dataset.pkl'
+#path = '/home/rlab10/OpenPCDet/data/zod/zod_val_dataset_obj_test.pkl'
 #path = '/home/rlab10/OpenPCDet/data/zod/zod_infos_trainval_full.pkl'
 #path = '/home/rlab10/OpenPCDet/data/zod/zod_train_dataset.pkl'
 #path = '/media/rlab10/Dataset/zod/zod_train_test_names.pkl'
@@ -10,8 +12,9 @@ with open(path, 'rb') as f:
     zod_infos = pickle.load(f)
 
 list_zod = list(zod_infos)
-first_entry  = zod_infos[1]
+first_entry  = zod_infos[3581]
 print(first_entry)
+
 
 # for idx, info in enumerate(list_zod):
 #     print(f"\n{'='*40} Sample Index: {idx} {'='*40}\n")
